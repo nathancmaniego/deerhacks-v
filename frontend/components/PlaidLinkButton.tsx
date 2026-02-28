@@ -39,10 +39,8 @@ export default function PlaidLinkButton({ onSuccess, isConnected }: PlaidLinkBut
     try {
       const token = await getLinkToken();
 
-      // Create the Plaid Link session with the token
       create({ token, noLoadingState: false });
 
-      // Open the Plaid Link UI
       open({
         onSuccess: handleSuccess,
         onExit: handleExit,

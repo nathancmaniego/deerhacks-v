@@ -1,26 +1,11 @@
-from urllib.parse import urlparse
-
-from motor.motor_asyncio import AsyncIOMotorClient
+from supabase import create_client, Client
 from app.config import get_settings
 
 settings = get_settings()
 
-client = AsyncIOMotorClient(settings.MONGODB_URI)
-
-# Extract database name from URI, fall back to default
-_parsed = urlparse(settings.MONGODB_URI)
-_db_name = _parsed.path.lstrip("/").split("?")[0] or "subconscious_invest"
-db = client[_db_name]
-
-# Collections
-users_collection = db["users"]
-transactions_collection = db["transactions"]
-investments_collection = db["investments"]
+supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 
 async def init_db():
-    """Create indexes for collections."""
-    await users_collection.create_index("email", unique=True)
-    await transactions_collection.create_index("user_id")
-    await transactions_collection.create_index("plaid_transaction_id", unique=True, sparse=True)
-    await investments_collection.create_index("user_id")
+    """Verify Supabase connection with a lightweight query."""
+    supabase.table("users").select("id").limit(1).execute()

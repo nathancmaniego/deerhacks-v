@@ -9,8 +9,9 @@ _ENV_FILE = _BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
-    # MongoDB
-    MONGODB_URI: str = "mongodb://localhost:27017/subconscious_invest"
+    # Supabase
+    SUPABASE_URL: str = ""
+    SUPABASE_KEY: str = ""
 
     # JWT
     JWT_SECRET: str = "change-this-secret-key"

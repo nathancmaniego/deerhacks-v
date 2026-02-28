@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { getItem, setItem, deleteItem } from '@/services/storage';
 import { User, getMe, loginUser, registerUser } from '@/services/auth';
 
 interface AuthContextType {
@@ -32,13 +32,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const token = await SecureStore.getItemAsync('access_token');
+      const token = await getItem('access_token');
       if (token) {
         const userData = await getMe();
         setUser(userData);
       }
     } catch (error) {
-      await SecureStore.deleteItemAsync('access_token');
+      await deleteItem('access_token');
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -47,18 +47,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const response = await loginUser(email, password);
-    await SecureStore.setItemAsync('access_token', response.access_token);
+    await setItem('access_token', response.access_token);
     setUser(response.user);
   };
 
   const register = async (email: string, password: string, name: string) => {
     const response = await registerUser(email, password, name);
-    await SecureStore.setItemAsync('access_token', response.access_token);
+    await setItem('access_token', response.access_token);
     setUser(response.user);
   };
 
   const logout = async () => {
-    await SecureStore.deleteItemAsync('access_token');
+    await deleteItem('access_token');
     setUser(null);
   };
 

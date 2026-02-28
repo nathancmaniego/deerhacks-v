@@ -1,5 +1,5 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import { getItem, deleteItem } from '@/services/storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
@@ -24,7 +24,7 @@ if (__DEV__ && typeof console !== 'undefined') {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -33,7 +33,7 @@ const api = axios.create({
 // Request interceptor: attach JWT token
 api.interceptors.request.use(
   async (config) => {
-    const token = await SecureStore.getItemAsync('access_token');
+    const token = await getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -47,7 +47,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      await SecureStore.deleteItemAsync('access_token');
+      await deleteItem('access_token');
     }
     return Promise.reject(error);
   }

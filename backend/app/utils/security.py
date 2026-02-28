@@ -7,7 +7,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.config import get_settings
-from app.database import users_collection
+from app.database import supabase
 
 settings = get_settings()
 
@@ -59,14 +59,11 @@ async def get_current_user(
             detail="Invalid token payload",
         )
 
-    from bson import ObjectId
-
-    user = await users_collection.find_one({"_id": ObjectId(user_id)})
-    if user is None:
+    result = supabase.table("users").select("*").eq("id", user_id).execute()
+    if not result.data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
 
-    user["id"] = str(user["_id"])
-    return user
+    return result.data[0]
