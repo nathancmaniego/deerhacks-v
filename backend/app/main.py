@@ -1,29 +1,46 @@
 from contextlib import asynccontextmanager
+
+import pymongo
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import get_settings
 from app.database import init_db
-from app.routers import auth, plaid, transactions, investments, ai
+from app.routers import auth
+
+
+def _redact_uri(uri: str) -> str:
+    """Hide password in URI for safe logging."""
+    if "@" in uri and "://" in uri:
+        scheme, rest = uri.split("://", 1)
+        if "@" in rest:
+            user_part, host_part = rest.rsplit("@", 1)
+            user = user_part.split(":")[0] if ":" in user_part else user_part
+            return f"{scheme}://{user}:****@{host_part}"
+    return uri[:50] + "..." if len(uri) > 50 else uri
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    await init_db()
-
-    # Import and start scheduler
-    from app.services.scheduler import start_scheduler, shutdown_scheduler
-    start_scheduler()
+    # Startup: connect to DB and create indexes. If MongoDB is down, app still starts.
+    try:
+        await init_db()
+        print("[Startup] MongoDB connected and indexes ready.")
+    except pymongo.errors.ServerSelectionTimeoutError:
+        uri = get_settings().MONGODB_URI
+        print("\n*** MongoDB connection failed. URI in use:", _redact_uri(uri))
+        if "mongodb.net" in uri:
+            print("   Atlas? Check: Network Access → Add IP → Allow from anywhere (0.0.0.0/0) for dev.")
+        else:
+            print("   Set MONGODB_URI in backend/.env and restart the server.\n")
 
     yield
-
-    # Shutdown
-    shutdown_scheduler()
+    # Shutdown: nothing to do for now
 
 
 app = FastAPI(
     title="SubConscious Invest API",
-    description="Automated savings and investment platform",
+    description="Auth-only API; add Plaid/investments later.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -37,12 +54,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
+# Auth only for now
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-app.include_router(plaid.router, prefix="/plaid", tags=["Plaid"])
-app.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
-app.include_router(investments.router, prefix="/investments", tags=["Investments"])
-app.include_router(ai.router, prefix="/ai", tags=["AI"])
 
 
 @app.get("/")

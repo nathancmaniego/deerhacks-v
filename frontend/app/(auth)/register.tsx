@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { getApiErrorMessage } from '@/services/api';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 
@@ -45,9 +46,7 @@ export default function RegisterScreen() {
     try {
       await register(email.trim(), password, name.trim());
     } catch (error: any) {
-      const message =
-        error.response?.data?.detail || 'Registration failed. Please try again.';
-      Alert.alert('Registration Failed', message);
+      Alert.alert('Registration Failed', getApiErrorMessage(error, 'Registration failed. Please try again.'));
     } finally {
       setLoading(false);
     }

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { getApiErrorMessage } from '@/services/api';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 
@@ -33,9 +34,7 @@ export default function LoginScreen() {
     try {
       await login(email.trim(), password);
     } catch (error: any) {
-      const message =
-        error.response?.data?.detail || 'Login failed. Please try again.';
-      Alert.alert('Login Failed', message);
+      Alert.alert('Login Failed', getApiErrorMessage(error, 'Login failed. Please try again.'));
     } finally {
       setLoading(false);
     }

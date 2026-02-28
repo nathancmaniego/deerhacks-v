@@ -1,5 +1,11 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+# Load .env from backend/ folder (parent of app/) so it's found no matter where you run uvicorn from
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -29,7 +35,7 @@ class Settings(BaseSettings):
     DEFAULT_ASSET: str = "SPY"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",
     }
 

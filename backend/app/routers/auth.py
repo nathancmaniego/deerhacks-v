@@ -1,3 +1,4 @@
+import pymongo
 from fastapi import APIRouter, HTTPException, status, Depends
 from bson import ObjectId
 
@@ -33,15 +34,19 @@ def user_doc_to_response(user: dict) -> UserResponse:
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(data: UserRegister):
-    # Check if user already exists
-    existing = await users_collection.find_one({"email": data.email})
+    try:
+        existing = await users_collection.find_one({"email": data.email})
+    except pymongo.errors.ServerSelectionTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable. Set MONGODB_URI in backend .env (e.g. your MongoDB Atlas connection string).",
+        )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
 
-    # Create user document
     from datetime import datetime, timezone
 
     user_doc = {
@@ -56,7 +61,13 @@ async def register(data: UserRegister):
         "created_at": datetime.now(timezone.utc),
     }
 
-    result = await users_collection.insert_one(user_doc)
+    try:
+        result = await users_collection.insert_one(user_doc)
+    except pymongo.errors.ServerSelectionTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable. Set MONGODB_URI in backend .env (e.g. your MongoDB Atlas connection string).",
+        )
     user_doc["_id"] = result.inserted_id
 
     token = create_access_token(str(result.inserted_id), data.email)
@@ -69,7 +80,13 @@ async def register(data: UserRegister):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: UserLogin):
-    user = await users_collection.find_one({"email": data.email})
+    try:
+        user = await users_collection.find_one({"email": data.email})
+    except pymongo.errors.ServerSelectionTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable. Set MONGODB_URI in backend .env (e.g. your MongoDB Atlas connection string).",
+        )
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -86,7 +103,13 @@ async def login(data: UserLogin):
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):
-    return user_doc_to_response(current_user)
+    try:
+        return user_doc_to_response(current_user)
+    except pymongo.errors.ServerSelectionTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable. Set MONGODB_URI in backend .env (e.g. your MongoDB Atlas connection string).",
+        )
 
 
 @router.put("/risk-profile", response_model=UserResponse)
@@ -94,9 +117,15 @@ async def update_risk_profile(
     data: UpdateRiskProfile,
     current_user: dict = Depends(get_current_user),
 ):
-    await users_collection.update_one(
-        {"_id": current_user["_id"]},
-        {"$set": {"risk_profile": data.risk_profile.value}},
-    )
+    try:
+        await users_collection.update_one(
+            {"_id": current_user["_id"]},
+            {"$set": {"risk_profile": data.risk_profile.value}},
+        )
+    except pymongo.errors.ServerSelectionTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable. Set MONGODB_URI in backend .env (e.g. your MongoDB Atlas connection string).",
+        )
     current_user["risk_profile"] = data.risk_profile.value
     return user_doc_to_response(current_user)
