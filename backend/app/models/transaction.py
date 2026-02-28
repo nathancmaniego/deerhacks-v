@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -9,7 +9,6 @@ class SpendingCategory(str, Enum):
     DISCRETIONARY = "discretionary"
 
 
-# Response schemas
 class TransactionResponse(BaseModel):
     id: str
     user_id: str
@@ -17,7 +16,7 @@ class TransactionResponse(BaseModel):
     merchant: str
     amount: float
     date: str
-    ai_category: Optional[SpendingCategory] = None
+    ai_category: Optional[str] = None
     savings_pct: Optional[float] = None
     savings_amount: Optional[float] = None
     processed: bool = False

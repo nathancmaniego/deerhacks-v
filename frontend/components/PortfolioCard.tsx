@@ -25,7 +25,7 @@ export default function PortfolioCard({ holding }: PortfolioCardProps) {
         </View>
         <View>
           <Text style={[styles.shares, { color: colors.text }]}>
-            {holding.qty.toFixed(4)} shares
+            {holding.qty.toFixed(6)} {holding.symbol}
           </Text>
           <Text style={[styles.avgPrice, { color: colors.secondaryText }]}>
             Avg ${holding.avg_entry_price.toFixed(2)}

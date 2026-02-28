@@ -1,12 +1,8 @@
-from bson import ObjectId
-
-from app.database import transactions_collection, users_collection
+from app.database import supabase
 from app.config import get_settings
 
 settings = get_settings()
 
-
-# Default percentage ranges per risk profile
 RISK_DEFAULTS = {
     "chill": {"essential": 2.0, "discretionary": 5.0, "default": 3.0},
     "moderate": {"essential": 5.0, "discretionary": 10.0, "default": 7.0},
@@ -20,12 +16,6 @@ def calculate_savings_amount(
     ai_category: str | None = None,
     risk_profile: str = "moderate",
 ) -> tuple[float, float]:
-    """
-    Calculate the dollar amount to save for a given transaction.
-
-    Returns:
-        tuple of (savings_amount, savings_pct_used)
-    """
     if savings_pct is not None:
         pct = savings_pct
     elif ai_category:
@@ -40,18 +30,17 @@ def calculate_savings_amount(
 
 
 async def process_transaction_savings(transaction_id: str, user_id: str) -> dict | None:
-    """
-    Process a single transaction: calculate savings and update the user's pool.
-
-    Returns the updated transaction doc or None if already processed.
-    """
-    txn = await transactions_collection.find_one({"_id": ObjectId(transaction_id)})
-    if not txn or txn.get("processed"):
+    txn_result = supabase.table("transactions").select("*").eq("id", transaction_id).execute()
+    if not txn_result.data:
+        return None
+    txn = txn_result.data[0]
+    if txn.get("processed"):
         return None
 
-    user = await users_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
+    user_result = supabase.table("users").select("*").eq("id", user_id).execute()
+    if not user_result.data:
         return None
+    user = user_result.data[0]
 
     risk_profile = user.get("risk_profile", "moderate")
 
@@ -62,80 +51,78 @@ async def process_transaction_savings(transaction_id: str, user_id: str) -> dict
         risk_profile=risk_profile,
     )
 
-    # Update the transaction
-    await transactions_collection.update_one(
-        {"_id": ObjectId(transaction_id)},
-        {
-            "$set": {
-                "savings_amount": savings_amount,
-                "savings_pct": pct_used,
-                "processed": True,
-            }
-        },
-    )
+    supabase.table("transactions").update({
+        "savings_amount": savings_amount,
+        "savings_pct": pct_used,
+        "processed": True,
+    }).eq("id", transaction_id).execute()
 
-    # Add to user's savings pool
-    await users_collection.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$inc": {"savings_pool": savings_amount}},
-    )
+    current_pool = user.get("savings_pool", 0.0) or 0.0
+    new_pool = current_pool + savings_amount
+    supabase.table("users").update({"savings_pool": new_pool}).eq("id", user_id).execute()
 
     return {
         "transaction_id": transaction_id,
         "savings_amount": savings_amount,
         "savings_pct": pct_used,
-        "new_pool_balance": user.get("savings_pool", 0) + savings_amount,
+        "new_pool_balance": new_pool,
     }
 
 
 async def process_all_unprocessed(user_id: str) -> list[dict]:
-    """Process all unprocessed transactions for a user."""
-    cursor = transactions_collection.find({
-        "user_id": user_id,
-        "processed": False,
-    })
+    result = (
+        supabase.table("transactions")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("processed", False)
+        .execute()
+    )
 
     results = []
-    async for txn in cursor:
-        result = await process_transaction_savings(str(txn["_id"]), user_id)
-        if result:
-            results.append(result)
-
+    for txn in result.data:
+        r = await process_transaction_savings(txn["id"], user_id)
+        if r:
+            results.append(r)
     return results
 
 
 async def get_savings_summary(user_id: str) -> dict:
-    """Get a summary of savings for a user."""
-    user = await users_collection.find_one({"_id": ObjectId(user_id)})
+    user_result = supabase.table("users").select("savings_pool").eq("id", user_id).execute()
+    pool = user_result.data[0]["savings_pool"] if user_result.data else 0.0
+    pool = pool or 0.0
 
-    # Total saved across all transactions
-    pipeline = [
-        {"$match": {"user_id": user_id, "processed": True}},
-        {"$group": {"_id": None, "total": {"$sum": "$savings_amount"}}},
-    ]
-    total_result = await transactions_collection.aggregate(pipeline).to_list(1)
-    total_saved = total_result[0]["total"] if total_result else 0.0
+    txn_result = (
+        supabase.table("transactions")
+        .select("date, savings_amount")
+        .eq("user_id", user_id)
+        .eq("processed", True)
+        .order("date")
+        .execute()
+    )
 
-    # Savings history by date
-    history_pipeline = [
-        {"$match": {"user_id": user_id, "processed": True}},
-        {
-            "$group": {
-                "_id": "$date",
-                "amount": {"$sum": "$savings_amount"},
-                "count": {"$sum": 1},
-            }
-        },
-        {"$sort": {"_id": 1}},
-    ]
-    history = await transactions_collection.aggregate(history_pipeline).to_list(100)
+    total_saved = 0.0
+    history_map: dict[str, dict] = {}
+    for r in txn_result.data:
+        amt = r.get("savings_amount") or 0.0
+        total_saved += amt
+        d = r["date"]
+        if d not in history_map:
+            history_map[d] = {"date": d, "amount": 0.0, "transactions": 0}
+        history_map[d]["amount"] += amt
+        history_map[d]["transactions"] += 1
+
+    inv_result = (
+        supabase.table("investments")
+        .select("amount_invested")
+        .eq("user_id", user_id)
+        .eq("status", "filled")
+        .execute()
+    )
+    total_invested = sum(r["amount_invested"] for r in inv_result.data)
 
     return {
         "total_saved": total_saved,
-        "savings_pool": user.get("savings_pool", 0.0) if user else 0.0,
-        "total_invested": total_saved - (user.get("savings_pool", 0.0) if user else 0.0),
-        "savings_history": [
-            {"date": h["_id"], "amount": h["amount"], "transactions": h["count"]}
-            for h in history
-        ],
+        "savings_pool": pool,
+        "total_invested": total_invested,
+        "savings_history": list(history_map.values()),
     }

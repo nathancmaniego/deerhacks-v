@@ -103,7 +103,7 @@ export default function DashboardScreen() {
           </Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Portfolio</Text>
+          <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Crypto</Text>
           <Text style={[styles.statValue, { color: colors.accent }]}>
             ${portfolioValue.toFixed(2)}
           </Text>

@@ -3,10 +3,10 @@ import api from './api';
 export interface Investment {
   id: string;
   user_id: string;
-  alpaca_order_id: string | null;
   asset: string;
   amount_invested: number;
   shares: number | null;
+  price_at_purchase: number | null;
   status: string;
   created_at: string;
 }
@@ -58,4 +58,9 @@ export async function getInvestmentHistory(
     params: { limit, skip },
   });
   return response.data;
+}
+
+export async function getSupportedAssets(): Promise<string[]> {
+  const response = await api.get('/investments/supported');
+  return response.data.assets;
 }

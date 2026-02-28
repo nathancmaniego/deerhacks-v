@@ -23,17 +23,9 @@ class Settings(BaseSettings):
     PLAID_SECRET: str = ""
     PLAID_ENV: str = "sandbox"
 
-    # Alpaca
-    ALPACA_API_KEY: str = ""
-    ALPACA_SECRET_KEY: str = ""
-    ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
-
-    # Gemini
-    GEMINI_API_KEY: str = ""
-
     # Savings
     SAVINGS_POOL_THRESHOLD: float = 5.0
-    DEFAULT_ASSET: str = "SPY"
+    DEFAULT_ASSET: str = "BTC"
 
     model_config = {
         "env_file": _ENV_FILE,

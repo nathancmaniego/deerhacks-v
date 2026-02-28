@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import auth
+from app.routers import auth, investments, transactions
 
 
 @asynccontextmanager
@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SubConscious Invest API",
-    description="Auth-only API; add Plaid/investments later.",
+    description="Crypto investment API with simulated trading.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -34,6 +34,8 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(investments.router, prefix="/investments", tags=["Investments"])
+app.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
 
 
 @app.get("/")

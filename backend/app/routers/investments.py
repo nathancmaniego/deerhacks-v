@@ -1,20 +1,21 @@
-from fastapi import APIRouter, HTTPException, status, Depends
-from pydantic import BaseModel
-from bson import ObjectId
+import uuid
 from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from typing import Optional
 
-from app.database import users_collection, investments_collection
+from app.database import supabase
 from app.models.investment import (
     InvestmentResponse,
     InvestmentHistoryResponse,
     PortfolioResponse,
     PortfolioHolding,
 )
-from app.services.alpaca_service import (
-    place_fractional_order,
-    get_portfolio_positions,
-    get_account_info,
+from app.services.crypto_service import (
+    simulate_buy,
+    get_crypto_prices,
+    SUPPORTED_SYMBOLS,
 )
 from app.config import get_settings
 from app.utils.security import get_current_user
@@ -24,21 +25,14 @@ router = APIRouter()
 
 
 class ExecuteInvestmentRequest(BaseModel):
-    amount: Optional[float] = None  # If None, invest entire savings pool
-    asset: Optional[str] = None  # If None, use user's preferred asset
+    amount: Optional[float] = None
+    asset: Optional[str] = None
 
 
-def investment_doc_to_response(doc: dict) -> InvestmentResponse:
-    return InvestmentResponse(
-        id=str(doc["_id"]),
-        user_id=doc["user_id"],
-        alpaca_order_id=doc.get("alpaca_order_id"),
-        asset=doc["asset"],
-        amount_invested=doc["amount_invested"],
-        shares=doc.get("shares"),
-        status=doc.get("status", "pending"),
-        created_at=doc["created_at"],
-    )
+@router.get("/supported")
+async def supported_assets():
+    """Return the list of supported crypto symbols."""
+    return {"assets": SUPPORTED_SYMBOLS}
 
 
 @router.post("/execute", response_model=InvestmentResponse)
@@ -46,86 +40,126 @@ async def execute_investment(
     data: ExecuteInvestmentRequest | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """Execute an investment from the savings pool."""
-    user_id = str(current_user["_id"])
-    savings_pool = current_user.get("savings_pool", 0.0)
+    """Buy crypto using savings pool funds."""
+    user_id = current_user["id"]
+    savings_pool = current_user.get("savings_pool", 0.0) or 0.0
 
-    # Determine amount to invest
-    if data and data.amount:
-        invest_amount = data.amount
-        if invest_amount > savings_pool:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient savings pool. Available: ${savings_pool:.2f}",
-            )
-    else:
-        invest_amount = savings_pool
-
+    invest_amount = (data.amount if data and data.amount else None) or savings_pool
+    if invest_amount > savings_pool:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Insufficient savings pool. Available: ${savings_pool:.2f}",
+        )
     if invest_amount < 1.0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Minimum investment is $1.00. Current pool: ${savings_pool:.2f}",
         )
 
-    # Determine asset
-    asset = (data.asset if data and data.asset else None) or current_user.get(
-        "preferred_asset", settings.DEFAULT_ASSET
+    asset = (
+        (data.asset.upper() if data and data.asset else None)
+        or current_user.get("preferred_asset")
+        or settings.DEFAULT_ASSET
     )
+    if asset not in SUPPORTED_SYMBOLS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported asset: {asset}. Supported: {SUPPORTED_SYMBOLS}",
+        )
 
     try:
-        # Place the order
-        order_result = await place_fractional_order(asset, invest_amount)
-
-        # Create investment record
-        investment_doc = {
-            "user_id": user_id,
-            "alpaca_order_id": order_result["order_id"],
-            "asset": asset,
-            "amount_invested": invest_amount,
-            "shares": order_result.get("filled_qty", 0.0),
-            "status": order_result["status"],
-            "created_at": datetime.now(timezone.utc),
-        }
-
-        result = await investments_collection.insert_one(investment_doc)
-        investment_doc["_id"] = result.inserted_id
-
-        # Deduct from savings pool
-        await users_collection.update_one(
-            {"_id": current_user["_id"]},
-            {"$inc": {"savings_pool": -invest_amount}},
-        )
-
-        return investment_doc_to_response(investment_doc)
-
+        result = await simulate_buy(asset, invest_amount)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to execute investment: {str(e)}",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Price fetch failed: {e}",
         )
+
+    now = datetime.now(timezone.utc).isoformat()
+    row = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "asset": result["symbol"],
+        "amount_invested": result["amount_usd"],
+        "shares": result["shares"],
+        "price_at_purchase": result["price"],
+        "status": result["status"],
+        "created_at": now,
+    }
+
+    supabase.table("investments").insert(row).execute()
+
+    new_pool = savings_pool - invest_amount
+    supabase.table("users").update({"savings_pool": new_pool}).eq("id", user_id).execute()
+
+    return InvestmentResponse(**row)
 
 
 @router.get("/portfolio", response_model=PortfolioResponse)
 async def get_portfolio(current_user: dict = Depends(get_current_user)):
-    """Get current portfolio holdings from Alpaca."""
-    try:
-        positions = await get_portfolio_positions()
-        account = await get_account_info()
+    """Aggregate holdings and attach live prices."""
+    user_id = current_user["id"]
 
-        holdings = [PortfolioHolding(**pos) for pos in positions]
-        total_gain = sum(h.unrealized_pl for h in holdings)
+    rows = (
+        supabase.table("investments")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("status", "filled")
+        .execute()
+    ).data
 
+    agg: dict[str, dict] = {}
+    for r in rows:
+        sym = r["asset"]
+        if sym not in agg:
+            agg[sym] = {"qty": 0.0, "cost": 0.0}
+        agg[sym]["qty"] += r["shares"]
+        agg[sym]["cost"] += r["amount_invested"]
+
+    if not agg:
         return PortfolioResponse(
-            holdings=holdings,
-            total_value=account["portfolio_value"],
-            total_gain_loss=total_gain,
-            savings_pool=current_user.get("savings_pool", 0.0),
+            holdings=[],
+            total_value=0.0,
+            total_gain_loss=0.0,
+            savings_pool=current_user.get("savings_pool", 0.0) or 0.0,
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch portfolio: {str(e)}",
+
+    try:
+        prices = await get_crypto_prices(list(agg.keys()))
+    except Exception:
+        prices = {}
+
+    holdings: list[PortfolioHolding] = []
+    total_value = 0.0
+    total_gl = 0.0
+
+    for sym, data in agg.items():
+        price = prices.get(sym, 0.0)
+        mv = data["qty"] * price
+        avg = data["cost"] / data["qty"] if data["qty"] else 0.0
+        pl = mv - data["cost"]
+        plpc = pl / data["cost"] if data["cost"] else 0.0
+
+        holdings.append(
+            PortfolioHolding(
+                symbol=sym,
+                qty=data["qty"],
+                market_value=mv,
+                avg_entry_price=avg,
+                current_price=price,
+                unrealized_pl=pl,
+                unrealized_plpc=plpc,
+            )
         )
+        total_value += mv
+        total_gl += pl
+
+    return PortfolioResponse(
+        holdings=holdings,
+        total_value=total_value,
+        total_gain_loss=total_gl,
+        savings_pool=current_user.get("savings_pool", 0.0) or 0.0,
+    )
 
 
 @router.get("/history", response_model=InvestmentHistoryResponse)
@@ -134,21 +168,20 @@ async def get_investment_history(
     skip: int = 0,
     current_user: dict = Depends(get_current_user),
 ):
-    """Get investment history."""
-    user_id = str(current_user["_id"])
+    """Return paginated investment history."""
+    user_id = current_user["id"]
 
-    cursor = (
-        investments_collection.find({"user_id": user_id})
-        .sort("created_at", -1)
-        .skip(skip)
-        .limit(limit)
+    result = (
+        supabase.table("investments")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .range(skip, skip + limit - 1)
+        .execute()
     )
 
-    investments = []
-    total_invested = 0.0
-    async for doc in cursor:
-        investments.append(investment_doc_to_response(doc))
-        total_invested += doc["amount_invested"]
+    investments = [InvestmentResponse(**r) for r in result.data]
+    total_invested = sum(r["amount_invested"] for r in result.data)
 
     return InvestmentHistoryResponse(
         investments=investments,

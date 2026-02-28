@@ -60,7 +60,7 @@ export default function PortfolioScreen() {
     setRefreshing(false);
   }, [fetchData]);
 
-  const handleInvestNow = async () => {
+  const handleBuyCrypto = async () => {
     const pool = user?.savings_pool ?? 0;
     if (pool < 1) {
       Alert.alert('Insufficient Funds', 'You need at least $1.00 in your savings pool.');
@@ -71,23 +71,23 @@ export default function PortfolioScreen() {
       setInvesting(true);
       try {
         await executeInvestment();
-        Alert.alert('Success', 'Investment order placed!');
+        Alert.alert('Success', 'Crypto purchase complete!');
         await fetchData();
       } catch (error: any) {
-        Alert.alert('Error', error.response?.data?.detail || 'Failed to execute investment.');
+        Alert.alert('Error', error.response?.data?.detail || 'Failed to buy crypto.');
       } finally {
         setInvesting(false);
       }
     };
 
     if (Platform.OS === 'web') {
-      if (window.confirm(`Invest $${pool.toFixed(2)} from your savings pool?`)) {
+      if (window.confirm(`Buy crypto with $${pool.toFixed(2)} from your savings pool?`)) {
         await doInvest();
       }
     } else {
-      Alert.alert('Invest Now', `Invest $${pool.toFixed(2)} from your savings pool?`, [
+      Alert.alert('Buy Crypto', `Invest $${pool.toFixed(2)} from your savings pool into crypto?`, [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Invest', onPress: doInvest },
+        { text: 'Buy', onPress: doInvest },
       ]);
     }
   };
@@ -135,13 +135,13 @@ export default function PortfolioScreen() {
         </View>
         <TouchableOpacity
           style={[styles.investButton, { backgroundColor: colors.accent }]}
-          onPress={handleInvestNow}
+          onPress={handleBuyCrypto}
           activeOpacity={0.85}
           disabled={investing}>
           {investing ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.investButtonText}>Invest Now</Text>
+            <Text style={styles.investButtonText}>Buy Crypto</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -154,9 +154,9 @@ export default function PortfolioScreen() {
           <View style={[styles.emptyIconContainer, { backgroundColor: colors.accentLight }]}>
             <Ionicons name="trending-up-outline" size={24} color={colors.accent} />
           </View>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No holdings yet</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No crypto holdings yet</Text>
           <Text style={[styles.emptyDesc, { color: colors.secondaryText }]}>
-            Your investments will appear here once you start auto-investing.
+            Buy BTC, ETH, or SOL to get started. Your holdings will appear here.
           </Text>
         </View>
       ) : (
@@ -181,6 +181,7 @@ export default function PortfolioScreen() {
               <Text style={[styles.historyAsset, { color: colors.text }]}>{inv.asset}</Text>
               <Text style={[styles.historyDate, { color: colors.secondaryText }]}>
                 {new Date(inv.created_at).toLocaleDateString()}
+                {inv.price_at_purchase ? ` @ $${inv.price_at_purchase.toLocaleString()}` : ''}
               </Text>
             </View>
             <View style={styles.historyRight}>

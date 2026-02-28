@@ -1,28 +1,39 @@
-from fastapi import APIRouter, Depends
-from bson import ObjectId
+import random
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from app.database import transactions_collection
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.database import supabase
 from app.models.transaction import TransactionResponse, TransactionListResponse, SavingsSummary
 from app.services.savings_engine import process_all_unprocessed, get_savings_summary
 from app.utils.security import get_current_user
 
 router = APIRouter()
 
-
-def txn_doc_to_response(doc: dict) -> TransactionResponse:
-    return TransactionResponse(
-        id=str(doc["_id"]),
-        user_id=doc["user_id"],
-        plaid_transaction_id=doc.get("plaid_transaction_id"),
-        merchant=doc["merchant"],
-        amount=doc["amount"],
-        date=doc["date"],
-        ai_category=doc.get("ai_category"),
-        savings_pct=doc.get("savings_pct"),
-        savings_amount=doc.get("savings_amount"),
-        processed=doc.get("processed", False),
-        created_at=doc["created_at"],
-    )
+MOCK_MERCHANTS = [
+    # (merchant, amount_range, category)
+    ("Starbucks", (3.50, 7.50), "discretionary"),
+    ("Uber Eats", (12.00, 35.00), "discretionary"),
+    ("Netflix", (15.99, 15.99), "discretionary"),
+    ("Spotify", (10.99, 10.99), "discretionary"),
+    ("Amazon", (15.00, 120.00), "discretionary"),
+    ("Nike", (45.00, 180.00), "discretionary"),
+    ("Steam", (9.99, 59.99), "discretionary"),
+    ("McDonald's", (6.00, 14.00), "discretionary"),
+    ("Chipotle", (9.50, 16.00), "discretionary"),
+    ("Apple Store", (29.00, 199.00), "discretionary"),
+    ("Walmart Grocery", (35.00, 120.00), "essential"),
+    ("Costco", (80.00, 250.00), "essential"),
+    ("Shell Gas", (25.00, 65.00), "essential"),
+    ("CVS Pharmacy", (8.00, 45.00), "essential"),
+    ("Metro Transit", (2.75, 2.75), "essential"),
+    ("Verizon Wireless", (65.00, 85.00), "essential"),
+    ("Electric Company", (60.00, 150.00), "essential"),
+    ("Water Utility", (30.00, 55.00), "essential"),
+    ("State Farm Insurance", (120.00, 120.00), "essential"),
+    ("Planet Fitness", (24.99, 24.99), "essential"),
+]
 
 
 @router.get("/", response_model=TransactionListResponse)
@@ -31,22 +42,19 @@ async def list_transactions(
     skip: int = 0,
     current_user: dict = Depends(get_current_user),
 ):
-    """List user's transactions with savings info."""
-    user_id = str(current_user["_id"])
+    user_id = current_user["id"]
 
-    cursor = (
-        transactions_collection.find({"user_id": user_id})
-        .sort("date", -1)
-        .skip(skip)
-        .limit(limit)
+    result = (
+        supabase.table("transactions")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("date", desc=True)
+        .range(skip, skip + limit - 1)
+        .execute()
     )
 
-    transactions = []
-    total_savings = 0.0
-    async for doc in cursor:
-        transactions.append(txn_doc_to_response(doc))
-        if doc.get("savings_amount"):
-            total_savings += doc["savings_amount"]
+    transactions = [TransactionResponse(**r) for r in result.data]
+    total_savings = sum(r.get("savings_amount") or 0.0 for r in result.data)
 
     return TransactionListResponse(
         transactions=transactions,
@@ -57,19 +65,65 @@ async def list_transactions(
 
 @router.post("/process")
 async def process_transactions(current_user: dict = Depends(get_current_user)):
-    """Process all unprocessed transactions (calculate savings, update pool)."""
-    user_id = str(current_user["_id"])
+    user_id = current_user["id"]
     results = await process_all_unprocessed(user_id)
-
-    return {
-        "processed": len(results),
-        "results": results,
-    }
+    return {"processed": len(results), "results": results}
 
 
 @router.get("/savings", response_model=SavingsSummary)
 async def savings_summary(current_user: dict = Depends(get_current_user)):
-    """Get savings summary for the user."""
-    user_id = str(current_user["_id"])
+    user_id = current_user["id"]
     summary = await get_savings_summary(user_id)
     return SavingsSummary(**summary)
+
+
+@router.post("/seed")
+async def seed_mock_transactions(
+    days: int = 30,
+    count: int = 40,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate realistic mock transactions and process them into the savings pool."""
+    user_id = current_user["id"]
+
+    existing = (
+        supabase.table("transactions")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if existing.count and existing.count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User already has {existing.count} transactions. Delete them first or use a fresh account.",
+        )
+
+    now = datetime.now(timezone.utc)
+    rows = []
+    for _ in range(count):
+        merchant, (lo, hi), category = random.choice(MOCK_MERCHANTS)
+        amount = round(random.uniform(lo, hi), 2)
+        offset_days = random.randint(0, days - 1)
+        date = (now - timedelta(days=offset_days)).strftime("%Y-%m-%d")
+
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "merchant": merchant,
+            "amount": amount,
+            "date": date,
+            "ai_category": category,
+            "processed": False,
+            "created_at": now.isoformat(),
+        })
+
+    supabase.table("transactions").insert(rows).execute()
+
+    results = await process_all_unprocessed(user_id)
+
+    return {
+        "seeded": len(rows),
+        "processed": len(results),
+        "total_savings_added": sum(r["savings_amount"] for r in results),
+        "message": f"Created {len(rows)} mock transactions and added savings to pool.",
+    }

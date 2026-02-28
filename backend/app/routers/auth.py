@@ -46,7 +46,7 @@ async def register(data: UserRegister):
         "name": data.name,
         "risk_profile": "moderate",
         "savings_pool": 0.0,
-        "preferred_asset": "SPY",
+        "preferred_asset": "BTC",
     }
 
     try:
