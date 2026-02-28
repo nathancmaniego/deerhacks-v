@@ -1,0 +1,17 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+motor==3.6.0
+pymongo==4.10.1
+pydantic[dotenv]==2.10.4
+pydantic-settings==2.7.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+email-validator==2.1.1
+plaid-python==27.0.0
+alpaca-py==0.33.1
+google-generativeai==0.8.4
+apscheduler==3.10.4
+httpx==0.28.1
+python-dotenv==1.0.1
+python-multipart==0.0.20
