@@ -18,12 +18,11 @@ export default function PlaidLinkButton({ onSuccess, isConnected }: PlaidLinkBut
         styles.button,
         {
           backgroundColor: isConnected ? colors.savingsGreen : colors.accent,
-          opacity: isConnected ? 1 : 0.6,
+          opacity: isConnected ? 1 : 0.7,
         },
       ]}
-      onPress={() =>
-        Alert.alert('Not Available', 'Bank linking is only available on mobile devices.')
-      }>
+      activeOpacity={0.85}
+      onPress={() => Alert.alert('Not Available', 'Bank linking is only available on mobile.')}>
       <Text style={styles.buttonText}>
         {isConnected ? 'Bank Connected' : 'Connect Bank (Mobile Only)'}
       </Text>
@@ -32,14 +31,6 @@ export default function PlaidLinkButton({ onSuccess, isConnected }: PlaidLinkBut
 }
 
 const styles = StyleSheet.create({
-  button: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
+  button: { borderRadius: 10, paddingVertical: 14, alignItems: 'center' },
+  buttonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
 });

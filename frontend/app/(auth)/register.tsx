@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -31,17 +32,14 @@ export default function RegisterScreen() {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
-
     setLoading(true);
     try {
       await register(email.trim(), password, name.trim());
@@ -56,117 +54,117 @@ export default function RegisterScreen() {
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={[styles.logo, { color: colors.accent }]}>SC</Text>
-          <Text style={[styles.title, { color: colors.text }]}>
-            Create Account
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
-            Start investing on autopilot
-          </Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <View style={[styles.logoContainer, { backgroundColor: colors.accent }]}>
+              <Text style={styles.logoText}>SC</Text>
+            </View>
+            <Text style={[styles.title, { color: colors.text }]}>
+              Create account
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+              Start investing on autopilot
+            </Text>
+          </View>
+
+          <View style={styles.form}>
+            <View style={styles.inputWrapper}>
+              <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
+                Full Name
+              </Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="John Doe"
+                  placeholderTextColor={colors.secondaryText + '80'}
+                  autoCapitalize="words"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
+                Email
+              </Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={colors.secondaryText + '80'}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
+                Password
+              </Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Min. 6 characters"
+                  placeholderTextColor={colors.secondaryText + '80'}
+                  secureTextEntry
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
+                Confirm Password
+              </Text>
+              <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={[styles.input, { color: colors.text }]}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Re-enter password"
+                  placeholderTextColor={colors.secondaryText + '80'}
+                  secureTextEntry
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, { backgroundColor: colors.accent }]}
+              onPress={handleRegister}
+              activeOpacity={0.85}
+              disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Create Account</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.footer}>
+              <Text style={[styles.footerText, { color: colors.secondaryText }]}>
+                Already have an account?{' '}
+              </Text>
+              <Link href="/(auth)/login" asChild>
+                <TouchableOpacity>
+                  <Text style={[styles.linkText, { color: colors.accent }]}>
+                    Sign In
+                  </Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+          </View>
         </View>
-
-        <View style={styles.form}>
-          <View
-            style={[
-              styles.inputContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
-            <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
-              Full Name
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={name}
-              onChangeText={setName}
-              placeholder="John Doe"
-              placeholderTextColor={colors.tabIconDefault}
-              autoCapitalize="words"
-            />
-          </View>
-
-          <View
-            style={[
-              styles.inputContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
-            <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
-              Email
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.tabIconDefault}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View
-            style={[
-              styles.inputContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
-            <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
-              Password
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Min. 6 characters"
-              placeholderTextColor={colors.tabIconDefault}
-              secureTextEntry
-            />
-          </View>
-
-          <View
-            style={[
-              styles.inputContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
-            <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
-              Confirm Password
-            </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Re-enter password"
-              placeholderTextColor={colors.tabIconDefault}
-              secureTextEntry
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.accent }]}
-            onPress={handleRegister}
-            disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Create Account</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.footer}>
-            <Text style={[styles.footerText, { color: colors.secondaryText }]}>
-              Already have an account?{' '}
-            </Text>
-            <Link href="/(auth)/login" asChild>
-              <TouchableOpacity>
-                <Text style={[styles.linkText, { color: colors.accent }]}>
-                  Sign In
-                </Text>
-              </TouchableOpacity>
-            </Link>
-          </View>
-        </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -175,71 +173,87 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+  },
+  content: {
+    paddingHorizontal: 28,
+    paddingVertical: 40,
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 36,
+    marginBottom: 32,
   },
-  logo: {
-    fontSize: 56,
+  logoContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  logoText: {
+    color: '#FFFFFF',
+    fontSize: 22,
     fontWeight: '800',
-    letterSpacing: -2,
-    marginBottom: 8,
+    letterSpacing: -0.5,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
+    letterSpacing: -0.5,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: 'center',
+    lineHeight: 22,
   },
   form: {
-    gap: 14,
+    gap: 18,
   },
-  inputContainer: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  inputWrapper: {
+    gap: 6,
   },
   inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 2,
+  },
+  inputContainer: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   input: {
     fontSize: 16,
-    paddingVertical: 4,
   },
   button: {
-    borderRadius: 16,
+    borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: 8,
   },
   footerText: {
-    fontSize: 15,
+    fontSize: 14,
   },
   linkText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
 });

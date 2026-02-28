@@ -23,7 +23,6 @@ export default function SavingsChart({ data }: SavingsChartProps) {
     );
   }
 
-  // Build cumulative data
   let cumulative = 0;
   const cumulativeData = data.map((d) => {
     cumulative += d.amount;
@@ -35,7 +34,6 @@ export default function SavingsChart({ data }: SavingsChartProps) {
     return `${parts[1]}/${parts[2]}`;
   });
 
-  // Show max 7 labels
   const step = Math.max(1, Math.floor(labels.length / 6));
   const displayLabels = labels.map((l, i) => (i % step === 0 ? l : ''));
 
@@ -56,12 +54,12 @@ export default function SavingsChart({ data }: SavingsChartProps) {
           backgroundGradientFrom: colors.card,
           backgroundGradientTo: colors.card,
           decimalPlaces: 0,
-          color: () => colors.savingsGreen,
+          color: () => colors.accent,
           labelColor: () => colors.secondaryText,
           propsForDots: {
             r: '3',
             strokeWidth: '1',
-            stroke: colors.savingsGreen,
+            stroke: colors.accent,
           },
           propsForBackgroundLines: {
             stroke: colors.border,
@@ -77,28 +75,19 @@ export default function SavingsChart({ data }: SavingsChartProps) {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  title: {
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  chart: {
-    borderRadius: 12,
-    marginLeft: -16,
-  },
+  title: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  chart: { borderRadius: 12, marginLeft: -16 },
   empty: {
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     padding: 32,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  emptyText: {
-    fontSize: 14,
-  },
+  emptyText: { fontSize: 14 },
 });

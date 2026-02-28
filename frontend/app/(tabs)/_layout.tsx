@@ -14,22 +14,29 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: colors.card,
+          backgroundColor: colors.background,
           borderTopColor: colors.border,
+          borderTopWidth: 1,
           paddingBottom: 4,
-          height: 88,
+          height: 84,
+          elevation: 0,
+          shadowOpacity: 0,
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
+          letterSpacing: 0.2,
         },
         headerStyle: {
           backgroundColor: colors.background,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 0,
         },
         headerTintColor: colors.text,
         headerTitleStyle: {
-          fontWeight: '700',
-          fontSize: 20,
+          fontWeight: '600',
+          fontSize: 18,
         },
         headerShadowVisible: false,
       }}>
@@ -38,7 +45,7 @@ export default function TabLayout() {
         options={{
           title: 'Dashboard',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+            <Ionicons name="grid-outline" size={size - 2} color={color} />
           ),
         }}
       />
@@ -47,7 +54,7 @@ export default function TabLayout() {
         options={{
           title: 'Portfolio',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="pie-chart" size={size} color={color} />
+            <Ionicons name="trending-up-outline" size={size - 2} color={color} />
           ),
         }}
       />
@@ -56,7 +63,7 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings" size={size} color={color} />
+            <Ionicons name="person-outline" size={size - 2} color={color} />
           ),
         }}
       />

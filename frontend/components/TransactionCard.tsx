@@ -16,14 +16,12 @@ export default function TransactionCard({ transaction }: TransactionCardProps) {
     transaction.ai_category === 'essential'
       ? colors.warning
       : transaction.ai_category === 'discretionary'
-      ? colors.investBlue
+      ? colors.accent
       : colors.tabIconDefault;
 
-  const categoryLabel =
-    transaction.ai_category
-      ? transaction.ai_category.charAt(0).toUpperCase() +
-        transaction.ai_category.slice(1)
-      : 'Pending';
+  const categoryLabel = transaction.ai_category
+    ? transaction.ai_category.charAt(0).toUpperCase() + transaction.ai_category.slice(1)
+    : 'Pending';
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -32,14 +30,10 @@ export default function TransactionCard({ transaction }: TransactionCardProps) {
           {transaction.merchant}
         </Text>
         <View style={styles.metaRow}>
-          <View style={[styles.badge, { backgroundColor: categoryColor + '20' }]}>
-            <Text style={[styles.badgeText, { color: categoryColor }]}>
-              {categoryLabel}
-            </Text>
+          <View style={[styles.badge, { backgroundColor: categoryColor + '15' }]}>
+            <Text style={[styles.badgeText, { color: categoryColor }]}>{categoryLabel}</Text>
           </View>
-          <Text style={[styles.date, { color: colors.secondaryText }]}>
-            {transaction.date}
-          </Text>
+          <Text style={[styles.date, { color: colors.secondaryText }]}>{transaction.date}</Text>
         </View>
       </View>
       <View style={styles.right}>
@@ -48,7 +42,7 @@ export default function TransactionCard({ transaction }: TransactionCardProps) {
         </Text>
         {transaction.savings_amount != null && transaction.savings_amount > 0 && (
           <Text style={[styles.savings, { color: colors.savingsGreen }]}>
-            +${transaction.savings_amount.toFixed(2)} saved
+            +${transaction.savings_amount.toFixed(2)}
           </Text>
         )}
       </View>
@@ -63,48 +57,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  left: {
-    flex: 1,
-    marginRight: 12,
-  },
-  merchant: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  date: {
-    fontSize: 13,
-  },
-  right: {
-    alignItems: 'flex-end',
-  },
-  amount: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  savings: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 3,
-  },
+  left: { flex: 1, marginRight: 12 },
+  merchant: { fontSize: 15, fontWeight: '600', marginBottom: 6 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  badgeText: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  date: { fontSize: 13 },
+  right: { alignItems: 'flex-end' },
+  amount: { fontSize: 15, fontWeight: '600' },
+  savings: { fontSize: 12, fontWeight: '600', marginTop: 2 },
 });

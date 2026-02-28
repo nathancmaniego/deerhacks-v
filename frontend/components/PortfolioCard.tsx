@@ -21,11 +21,9 @@ export default function PortfolioCard({ holding }: PortfolioCardProps) {
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.left}>
         <View style={[styles.symbolBadge, { backgroundColor: colors.accentLight }]}>
-          <Text style={[styles.symbolText, { color: colors.accent }]}>
-            {holding.symbol}
-          </Text>
+          <Text style={[styles.symbolText, { color: colors.accent }]}>{holding.symbol}</Text>
         </View>
-        <View style={styles.info}>
+        <View>
           <Text style={[styles.shares, { color: colors.text }]}>
             {holding.qty.toFixed(4)} shares
           </Text>
@@ -39,8 +37,7 @@ export default function PortfolioCard({ holding }: PortfolioCardProps) {
           ${holding.market_value.toFixed(2)}
         </Text>
         <Text style={[styles.pl, { color: plColor }]}>
-          {plSign}${Math.abs(holding.unrealized_pl).toFixed(2)} ({plSign}
-          {plPercent}%)
+          {plSign}${Math.abs(holding.unrealized_pl).toFixed(2)} ({plSign}{plPercent}%)
         </Text>
       </View>
     </View>
@@ -54,44 +51,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  left: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  symbolBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  symbolText: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  info: {
-    gap: 2,
-  },
-  shares: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  avgPrice: {
-    fontSize: 13,
-  },
-  right: {
-    alignItems: 'flex-end',
-  },
-  value: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  pl: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 2,
-  },
+  left: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  symbolBadge: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
+  symbolText: { fontSize: 14, fontWeight: '700' },
+  shares: { fontSize: 14, fontWeight: '600' },
+  avgPrice: { fontSize: 13, marginTop: 2 },
+  right: { alignItems: 'flex-end' },
+  value: { fontSize: 15, fontWeight: '600' },
+  pl: { fontSize: 13, fontWeight: '600', marginTop: 2 },
 });

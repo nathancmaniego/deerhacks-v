@@ -29,7 +29,6 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     setLoading(true);
     try {
       await login(email.trim(), password);
@@ -46,57 +45,56 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.content}>
         <View style={styles.header}>
-          <Text style={[styles.logo, { color: colors.accent }]}>SC</Text>
+          <View style={[styles.logoContainer, { backgroundColor: colors.accent }]}>
+            <Text style={styles.logoText}>SC</Text>
+          </View>
           <Text style={[styles.title, { color: colors.text }]}>
-            SubConscious
+            Welcome back
           </Text>
           <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
-            Invest without thinking about it
+            Sign in to continue investing on autopilot
           </Text>
         </View>
 
         <View style={styles.form}>
-          <View
-            style={[
-              styles.inputContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
+          <View style={styles.inputWrapper}>
             <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
               Email
             </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.tabIconDefault}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+            <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.secondaryText + '80'}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
           </View>
 
-          <View
-            style={[
-              styles.inputContainer,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
+          <View style={styles.inputWrapper}>
             <Text style={[styles.inputLabel, { color: colors.secondaryText }]}>
               Password
             </Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.tabIconDefault}
-              secureTextEntry
-            />
+            <View style={[styles.inputContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your password"
+                placeholderTextColor={colors.secondaryText + '80'}
+                secureTextEntry
+              />
+            </View>
           </View>
 
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.accent }]}
             onPress={handleLogin}
+            activeOpacity={0.85}
             disabled={loading}>
             {loading ? (
               <ActivityIndicator color="#fff" />
@@ -112,7 +110,7 @@ export default function LoginScreen() {
             <Link href="/(auth)/register" asChild>
               <TouchableOpacity>
                 <Text style={[styles.linkText, { color: colors.accent }]}>
-                  Sign Up
+                  Create one
                 </Text>
               </TouchableOpacity>
             </Link>
@@ -130,68 +128,81 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
   },
-  logo: {
-    fontSize: 56,
+  logoContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  logoText: {
+    color: '#FFFFFF',
+    fontSize: 22,
     fontWeight: '800',
-    letterSpacing: -2,
-    marginBottom: 8,
+    letterSpacing: -0.5,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
+    letterSpacing: -0.5,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: 'center',
+    lineHeight: 22,
   },
   form: {
-    gap: 16,
+    gap: 20,
   },
-  inputContainer: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  inputWrapper: {
+    gap: 6,
   },
   inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 2,
+  },
+  inputContainer: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   input: {
     fontSize: 16,
-    paddingVertical: 4,
   },
   button: {
-    borderRadius: 16,
+    borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 16,
+    marginTop: 8,
   },
   footerText: {
-    fontSize: 15,
+    fontSize: 14,
   },
   linkText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
 });

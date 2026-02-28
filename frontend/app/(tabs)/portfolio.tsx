@@ -8,7 +8,9 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
@@ -38,7 +40,6 @@ export default function PortfolioScreen() {
         getPortfolio().catch(() => null),
         getInvestmentHistory(20).catch(() => ({ investments: [], total_invested: 0, count: 0 })),
       ]);
-
       setPortfolio(portfolioData);
       setInvestments(historyData.investments);
       await refreshUser();
@@ -62,35 +63,33 @@ export default function PortfolioScreen() {
   const handleInvestNow = async () => {
     const pool = user?.savings_pool ?? 0;
     if (pool < 1) {
-      Alert.alert('Insufficient Funds', 'You need at least $1.00 in your savings pool to invest.');
+      Alert.alert('Insufficient Funds', 'You need at least $1.00 in your savings pool.');
       return;
     }
 
-    Alert.alert(
-      'Invest Now',
-      `Invest $${pool.toFixed(2)} from your savings pool?`,
-      [
+    const doInvest = async () => {
+      setInvesting(true);
+      try {
+        await executeInvestment();
+        Alert.alert('Success', 'Investment order placed!');
+        await fetchData();
+      } catch (error: any) {
+        Alert.alert('Error', error.response?.data?.detail || 'Failed to execute investment.');
+      } finally {
+        setInvesting(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Invest $${pool.toFixed(2)} from your savings pool?`)) {
+        await doInvest();
+      }
+    } else {
+      Alert.alert('Invest Now', `Invest $${pool.toFixed(2)} from your savings pool?`, [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Invest',
-          onPress: async () => {
-            setInvesting(true);
-            try {
-              await executeInvestment();
-              Alert.alert('Success', 'Investment order placed!');
-              await fetchData();
-            } catch (error: any) {
-              Alert.alert(
-                'Error',
-                error.response?.data?.detail || 'Failed to execute investment.'
-              );
-            } finally {
-              setInvesting(false);
-            }
-          },
-        },
-      ]
-    );
+        { text: 'Invest', onPress: doInvest },
+      ]);
+    }
   };
 
   if (loading) {
@@ -111,42 +110,40 @@ export default function PortfolioScreen() {
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
       }>
-      {/* Portfolio Value Header */}
-      <View style={[styles.headerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.headerLabel, { color: colors.secondaryText }]}>
-          Total Portfolio Value
+      {/* Value Header */}
+      <View style={styles.valueHeader}>
+        <Text style={[styles.valueLabel, { color: colors.secondaryText }]}>
+          Portfolio Value
         </Text>
-        <Text style={[styles.headerValue, { color: colors.text }]}>
+        <Text style={[styles.valueAmount, { color: colors.text }]}>
           ${(portfolio?.total_value ?? 0).toFixed(2)}
         </Text>
-        <Text
-          style={[
-            styles.headerGain,
-            { color: isPositive ? colors.savingsGreen : colors.danger },
-          ]}>
-          {isPositive ? '+' : ''}${totalGainLoss.toFixed(2)} total
+        <Text style={[styles.valueChange, { color: isPositive ? colors.savingsGreen : colors.danger }]}>
+          {isPositive ? '+' : ''}${totalGainLoss.toFixed(2)} all time
         </Text>
+      </View>
 
-        <View style={styles.poolRow}>
-          <View>
-            <Text style={[styles.poolLabel, { color: colors.secondaryText }]}>
-              Savings Pool
-            </Text>
-            <Text style={[styles.poolValue, { color: colors.savingsGreen }]}>
-              ${(user?.savings_pool ?? 0).toFixed(2)}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.investButton, { backgroundColor: colors.accent }]}
-            onPress={handleInvestNow}
-            disabled={investing}>
-            {investing ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.investButtonText}>Invest Now</Text>
-            )}
-          </TouchableOpacity>
+      {/* Pool + Invest */}
+      <View style={[styles.poolCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View>
+          <Text style={[styles.poolLabel, { color: colors.secondaryText }]}>
+            Available to invest
+          </Text>
+          <Text style={[styles.poolValue, { color: colors.savingsGreen }]}>
+            ${(user?.savings_pool ?? 0).toFixed(2)}
+          </Text>
         </View>
+        <TouchableOpacity
+          style={[styles.investButton, { backgroundColor: colors.accent }]}
+          onPress={handleInvestNow}
+          activeOpacity={0.85}
+          disabled={investing}>
+          {investing ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.investButtonText}>Invest Now</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Holdings */}
@@ -154,23 +151,20 @@ export default function PortfolioScreen() {
 
       {!portfolio || portfolio.holdings.length === 0 ? (
         <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            No holdings yet
-          </Text>
+          <View style={[styles.emptyIconContainer, { backgroundColor: colors.accentLight }]}>
+            <Ionicons name="trending-up-outline" size={24} color={colors.accent} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No holdings yet</Text>
           <Text style={[styles.emptyDesc, { color: colors.secondaryText }]}>
             Your investments will appear here once you start auto-investing.
           </Text>
         </View>
       ) : (
-        portfolio.holdings.map((holding) => (
-          <PortfolioCard key={holding.symbol} holding={holding} />
-        ))
+        portfolio.holdings.map((h) => <PortfolioCard key={h.symbol} holding={h} />)
       )}
 
-      {/* Investment History */}
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        Investment History
-      </Text>
+      {/* History */}
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>History</Text>
 
       {investments.length === 0 ? (
         <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -182,14 +176,9 @@ export default function PortfolioScreen() {
         investments.map((inv) => (
           <View
             key={inv.id}
-            style={[
-              styles.historyItem,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}>
+            style={[styles.historyItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View>
-              <Text style={[styles.historyAsset, { color: colors.text }]}>
-                {inv.asset}
-              </Text>
+              <Text style={[styles.historyAsset, { color: colors.text }]}>{inv.asset}</Text>
               <Text style={[styles.historyDate, { color: colors.secondaryText }]}>
                 {new Date(inv.created_at).toLocaleDateString()}
               </Text>
@@ -201,22 +190,12 @@ export default function PortfolioScreen() {
               <View
                 style={[
                   styles.statusBadge,
-                  {
-                    backgroundColor:
-                      inv.status === 'filled'
-                        ? colors.savingsGreen + '20'
-                        : colors.warning + '20',
-                  },
+                  { backgroundColor: inv.status === 'filled' ? colors.savingsGreen + '18' : colors.warning + '18' },
                 ]}>
                 <Text
                   style={[
                     styles.statusText,
-                    {
-                      color:
-                        inv.status === 'filled'
-                          ? colors.savingsGreen
-                          : colors.warning,
-                    },
+                    { color: inv.status === 'filled' ? colors.savingsGreen : colors.warning },
                   ]}>
                   {inv.status}
                 </Text>
@@ -230,125 +209,49 @@ export default function PortfolioScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  container: { flex: 1 },
+  contentContainer: { padding: 20, paddingBottom: 40 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  valueHeader: {
     alignItems: 'center',
+    paddingVertical: 28,
+    marginBottom: 8,
   },
-  headerCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 20,
-    marginBottom: 20,
-  },
-  headerLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  headerValue: {
-    fontSize: 36,
-    fontWeight: '800',
-    marginVertical: 4,
-  },
-  headerGain: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  poolRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#E8E8F020',
-    paddingTop: 14,
-  },
-  poolLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  poolValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  investButton: {
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  investButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  sectionTitle: {
-    fontSize: 19,
-    fontWeight: '700',
-    marginBottom: 14,
-  },
-  emptyState: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  emptyDesc: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  historyItem: {
+  valueLabel: { fontSize: 14, fontWeight: '500' },
+  valueAmount: { fontSize: 44, fontWeight: '700', letterSpacing: -1.5, marginVertical: 4 },
+  valueChange: { fontSize: 15, fontWeight: '600' },
+  poolCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderRadius: 14,
     borderWidth: 1,
+    padding: 18,
+    marginBottom: 24,
+  },
+  poolLabel: { fontSize: 12, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
+  poolValue: { fontSize: 22, fontWeight: '700', marginTop: 4 },
+  investButton: { borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 },
+  investButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 14 },
+  emptyState: { borderRadius: 14, borderWidth: 1, padding: 28, alignItems: 'center', marginBottom: 24 },
+  emptyIconContainer: { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  emptyTitle: { fontSize: 17, fontWeight: '600', marginBottom: 6 },
+  emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  historyItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  historyAsset: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  historyDate: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  historyRight: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  historyAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
+  historyAsset: { fontSize: 15, fontWeight: '600' },
+  historyDate: { fontSize: 13, marginTop: 2 },
+  historyRight: { alignItems: 'flex-end', gap: 4 },
+  historyAmount: { fontSize: 15, fontWeight: '600' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusText: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
 });
