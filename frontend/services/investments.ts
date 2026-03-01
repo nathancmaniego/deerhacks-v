@@ -88,6 +88,21 @@ export async function searchStocks(query: string, limit: number = 15): Promise<S
   return response.data.results ?? [];
 }
 
+export interface InvestmentAdvice {
+  advice: string;
+  suggestions: Array<{
+    asset: string;
+    asset_type: string;
+    amount_pct: number;
+    reason: string;
+  }>;
+}
+
+export async function getInvestmentAdvice(): Promise<InvestmentAdvice> {
+  const response = await api.get('/investments/advice');
+  return response.data;
+}
+
 export async function sellHolding(asset: string, assetType: 'crypto' | 'stock'): Promise<{
   asset: string;
   asset_type: string;

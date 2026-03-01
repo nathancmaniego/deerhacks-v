@@ -15,6 +15,7 @@ from app.models.investment import (
 from app.services.price_service import get_supported_assets, get_prices_by_type, get_price, ASSET_TYPE_CRYPTO, ASSET_TYPE_STOCK
 from app.services.investment_execution import execute_simulated_buy
 from app.services.stock_service import search_stocks
+from app.services.gemini_service import get_investment_advice
 from app.config import get_settings
 from app.utils.security import get_current_user
 
@@ -37,6 +38,38 @@ class SellRequest(BaseModel):
 async def supported_assets():
     """Return Solana crypto (meme coins) and suggested stocks. Stocks: use /stocks/search for any ticker."""
     return get_supported_assets()
+
+
+@router.get("/advice")
+async def investment_advice(current_user: dict = Depends(get_current_user)):
+    """Get AI allocation suggestion based on total balance and risk profile."""
+    user_id = current_user["id"]
+    savings_pool = float(current_user.get("savings_pool") or 0)
+    risk_profile = (current_user.get("risk_profile") or "moderate").lower()
+
+    result = (
+        supabase.table("investments")
+        .select("asset, amount_invested")
+        .eq("user_id", user_id)
+        .eq("status", "filled")
+        .execute()
+    )
+    rows = result.data or []
+    total_value = 0.0
+    parts = []
+    for r in rows:
+        amt = float(r.get("amount_invested") or 0)
+        total_value += amt
+        parts.append(f"{r.get('asset', '?')} ${amt:.0f}")
+    holdings_summary = ", ".join(parts) if parts else "None"
+    total_balance = savings_pool + total_value
+
+    return await get_investment_advice(
+        total_balance=total_balance,
+        savings_pool=savings_pool,
+        risk_profile=risk_profile,
+        holdings_summary=holdings_summary,
+    )
 
 
 @router.get("/stocks/search")

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     ALPACA_SECRET_KEY: str = ""
     ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
 
+    # Gemini (transaction classification + investment advice)
+    GEMINI_API_KEY: str = ""
+
     model_config = {
         "env_file": _ENV_FILE,
         "env_file_encoding": "utf-8",

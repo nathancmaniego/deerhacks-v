@@ -25,10 +25,12 @@ import {
   getSupportedAssets,
   searchStocks,
   sellHolding,
+  getInvestmentAdvice,
   PortfolioResponse,
   Investment,
   SupportedAssets,
   StockSearchResult,
+  InvestmentAdvice,
 } from '@/services/investments';
 
 export default function PortfolioScreen() {
@@ -50,6 +52,8 @@ export default function PortfolioScreen() {
   const [sellingSymbol, setSellingSymbol] = useState<string | null>(null);
   const [investAmountTarget, setInvestAmountTarget] = useState<{ asset: string } | null>(null);
   const [investAmountInput, setInvestAmountInput] = useState('');
+  const [advice, setAdvice] = useState<InvestmentAdvice | null>(null);
+  const [adviceLoading, setAdviceLoading] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshUserRef = useRef(refreshUser);
   const fetchInFlightRef = useRef(false);
@@ -245,6 +249,73 @@ export default function PortfolioScreen() {
             <Text style={styles.investButtonText}>Invest</Text>
           )}
         </TouchableOpacity>
+      </View>
+
+      {/* AI suggestion */}
+      <View style={[styles.adviceCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.adviceHeader}>
+          <Ionicons name="sparkles" size={20} color={colors.accent} />
+          <Text style={[styles.adviceTitle, { color: colors.text }]}>AI suggestion</Text>
+        </View>
+        {adviceLoading && (
+          <View style={styles.adviceLoading}>
+            <ActivityIndicator size="small" color={colors.accent} />
+          </View>
+        )}
+        {!adviceLoading && !advice && (
+          <TouchableOpacity
+            style={[styles.adviceButton, { borderColor: colors.accent }]}
+            onPress={async () => {
+              setAdviceLoading(true);
+              setAdvice(null);
+              try {
+                const data = await getInvestmentAdvice();
+                setAdvice(data);
+              } catch {
+                setAdvice({ advice: 'Unable to load suggestion.', suggestions: [] });
+              } finally {
+                setAdviceLoading(false);
+              }
+            }}>
+            <Text style={[styles.adviceButtonText, { color: colors.accent }]}>Get advice</Text>
+          </TouchableOpacity>
+        )}
+        {!adviceLoading && advice && (
+          <>
+            <Text style={[styles.adviceText, { color: colors.text }]}>{advice.advice}</Text>
+            {advice.suggestions?.length > 0 && (
+              <View style={styles.suggestionsList}>
+                {advice.suggestions.map((s, i) => {
+                  const amount = ((user?.savings_pool ?? 0) * s.amount_pct) / 100;
+                  return (
+                    <TouchableOpacity
+                      key={`${s.asset}-${i}`}
+                      style={[styles.suggestionRow, { borderColor: colors.border }]}
+                      onPress={() => {
+                        setInvestType((s.asset_type === 'crypto' ? 'crypto' : 'stock') as 'crypto' | 'stock');
+                        setInvestAmountInput(amount >= 1 ? amount.toFixed(2) : '');
+                        setInvestAmountTarget({ asset: s.asset });
+                        setInvestModalVisible(true);
+                        loadSupportedAssetsIfNeeded();
+                      }}>
+                      <Text style={[styles.suggestionAsset, { color: colors.text }]}>
+                        {s.asset} — {s.amount_pct}%
+                      </Text>
+                      <Text style={[styles.suggestionReason, { color: colors.secondaryText }]} numberOfLines={1}>
+                        {s.reason}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.adviceButton, { borderColor: colors.accent, marginTop: 8 }]}
+              onPress={() => setAdvice(null)}>
+              <Text style={[styles.adviceButtonText, { color: colors.accent }]}>New suggestion</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Invest modal: pick type + asset, then enter amount */}
@@ -555,6 +626,34 @@ const styles = StyleSheet.create({
   poolValue: { fontSize: 22, fontWeight: '700', marginTop: 4 },
   investButton: { borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 },
   investButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  adviceCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 24,
+  },
+  adviceHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  adviceTitle: { fontSize: 16, fontWeight: '700' },
+  adviceLoading: { paddingVertical: 16, alignItems: 'center' },
+  adviceButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  adviceButtonText: { fontSize: 14, fontWeight: '600' },
+  adviceText: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  suggestionsList: { gap: 8 },
+  suggestionRow: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  suggestionAsset: { fontSize: 14, fontWeight: '700' },
+  suggestionReason: { fontSize: 12, marginTop: 2 },
   sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 14 },
   emptyState: { borderRadius: 14, borderWidth: 1, padding: 28, alignItems: 'center', marginBottom: 24 },
   emptyIconContainer: { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },

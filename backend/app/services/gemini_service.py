@@ -7,8 +7,8 @@ import google.generativeai as genai
 from app.config import get_settings
 
 settings = get_settings()
-
-genai.configure(api_key=settings.GEMINI_API_KEY)
+if getattr(settings, "GEMINI_API_KEY", None):
+    genai.configure(api_key=settings.GEMINI_API_KEY)
 
 
 CLASSIFICATION_PROMPT = """You are a financial AI assistant that classifies spending transactions and recommends savings percentages.
@@ -41,11 +41,54 @@ Example response:
 """
 
 
-def _generate_content_sync(prompt: str) -> str:
-    """Synchronous Gemini content generation."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    return response.text
+# Model IDs (tried in order; next used if one 404s or hits quota). Single-item tuple needs trailing comma.
+GEMINI_MODELS = ("gemini-2.5-flash-lite","gemini-2.5-flash")
+
+def _generate_content_sync(prompt: str, max_tokens: int = 256) -> str:
+    last_error = None
+    # Try with and without the "models/" prefix if needed
+    for model_id in GEMINI_MODELS:
+        try:
+            # Tip: Some environments prefer the full path 'models/gemini-2.5-flash-lite'
+            model = genai.GenerativeModel(model_id) 
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    response_mime_type="application/json" # Force JSON natively
+                ),
+            )
+            return response.text
+        except Exception as e:
+            last_error = e
+            # Only continue to the next model if it's a 404 'Not Found' error
+            if "404" in str(e) or "not found" in str(e).lower():
+                print(f"Model {model_id} not found, trying next...")
+                continue
+            raise # Re-raise if it's a 401 (Auth) or 429 (Rate Limit)
+            
+    raise last_error or RuntimeError("No Gemini models available")
+
+
+INVESTMENT_ADVICE_PROMPT = """You are a concise investment assistant. Given the user's balance and risk profile, suggest how to allocate their cash (savings_pool) into investments.
+
+Risk profiles:
+- chill: Prefer stable assets (SPY, maybe some SOL). Lower crypto %, higher stock %.
+- moderate: Balanced mix of stocks (SPY, AAPL) and some crypto (SOL).
+- aggressive: Willing to take more risk; can suggest more crypto (SOL, BONK) and growth stocks.
+
+User context:
+- Total balance: ${total_balance:.2f}
+- Cash available to invest: ${savings_pool:.2f}
+- Current holdings: {holdings_summary}
+- Risk profile: {risk_profile}
+
+Available: stocks (e.g. SPY, AAPL, NVDA) and Solana crypto (SOL, BONK, JUP, WIF, POPCAT).
+
+Reply with ONLY a valid JSON object (no markdown, no extra text):
+{{"advice": "One short paragraph (1-2 sentences) of what to do with their cash.", "suggestions": [{{"asset": "SPY", "asset_type": "stock", "amount_pct": 50, "reason": "Brief reason"}}, ...]}}
+
+Limit to 2-4 suggestions. amount_pct is percentage of their available cash to put in that asset. Keep advice under 2 sentences."""
 
 
 async def classify_transactions(
@@ -99,6 +142,50 @@ async def classify_transactions(
     except Exception as e:
         print(f"Gemini API error: {e}")
         return _fallback_classify(transactions, risk_profile)
+
+
+async def get_investment_advice(
+    total_balance: float,
+    savings_pool: float,
+    risk_profile: str,
+    holdings_summary: str = "None",
+) -> dict:
+    """
+    Get a short Gemini-powered allocation suggestion. Returns { advice, suggestions }.
+    Falls back to a static suggestion if Gemini is unavailable.
+    """
+    if not getattr(settings, "GEMINI_API_KEY", None):
+        return _fallback_advice(risk_profile, savings_pool)
+
+    prompt = INVESTMENT_ADVICE_PROMPT.format(
+        total_balance=total_balance,
+        savings_pool=savings_pool,
+        holdings_summary=holdings_summary,
+        risk_profile=risk_profile,
+    )
+    try:
+        response_text = await asyncio.to_thread(_generate_content_sync, prompt, max_tokens=320)
+        response_text = response_text.strip()
+        if response_text.startswith("```"):
+            response_text = response_text.split("\n", 1)[1].rsplit("```", 1)[0]
+        data = json.loads(response_text)
+        if isinstance(data.get("suggestions"), list) and isinstance(data.get("advice"), str):
+            return data
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"Gemini advice error: {e}")
+    return _fallback_advice(risk_profile, savings_pool)
+
+
+def _fallback_advice(risk_profile: str, savings_pool: float) -> dict:
+    """Static suggestion when Gemini is not configured or fails."""
+    pct = min(70, 40 + (20 if risk_profile == "moderate" else 30 if risk_profile == "aggressive" else 10))
+    return {
+        "advice": f"With a {risk_profile} profile, consider investing up to {pct}% of your cash in a mix of SPY (stocks) and SOL (crypto). Start with SPY for stability.",
+        "suggestions": [
+            {"asset": "SPY", "asset_type": "stock", "amount_pct": min(60, pct + 10), "reason": "Broad market, lower volatility"},
+            {"asset": "SOL", "asset_type": "crypto", "amount_pct": max(10, pct - 50), "reason": "Solana ecosystem"},
+        ],
+    }
 
 
 def _fallback_classify(transactions: list[dict], risk_profile: str) -> list[dict]:
