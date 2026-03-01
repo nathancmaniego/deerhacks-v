@@ -1,5 +1,6 @@
 from app.database import supabase
 from app.config import get_settings
+from app.services.auto_invest import trigger_auto_invest
 
 settings = get_settings()
 
@@ -61,11 +62,28 @@ async def process_transaction_savings(transaction_id: str, user_id: str) -> dict
     new_pool = current_pool + savings_amount
     supabase.table("users").update({"savings_pool": new_pool}).eq("id", user_id).execute()
 
+    # Auto-invest: whenever we added any savings and pool has at least $1, invest (min $1 so it shows)
+    auto_invest_result = None
+    if savings_amount > 0 and new_pool >= 1.0:
+        try:
+            auto_invest_result = await trigger_auto_invest(
+                user_id=user_id,
+                savings_amount=savings_amount,
+                current_pool=new_pool,
+                risk_profile=risk_profile,
+            )
+            if auto_invest_result:
+                new_pool = new_pool - (auto_invest_result.get("amount_invested") or 0)
+        except Exception as e:
+            print(f"Auto-invest skipped: {e}")
+
     return {
         "transaction_id": transaction_id,
         "savings_amount": savings_amount,
         "savings_pct": pct_used,
         "new_pool_balance": new_pool,
+        "auto_invested": auto_invest_result is not None,
+        "auto_invest_asset": auto_invest_result.get("asset") if auto_invest_result else None,
     }
 
 

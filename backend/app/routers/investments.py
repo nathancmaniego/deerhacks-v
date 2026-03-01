@@ -229,7 +229,8 @@ async def get_portfolio(current_user: dict = Depends(get_current_user)):
     )
     rows = result.data or []
 
-    # Aggregate by (asset, asset_type); default asset_type to crypto for legacy rows
+    # Aggregate by (asset, asset_type); default asset_type to crypto for legacy rows.
+    # If shares is 0/missing (e.g. DB integer column), derive qty from amount_invested/price_at_purchase.
     agg: dict[tuple[str, str], dict] = {}
     for r in rows:
         sym = r["asset"]
@@ -239,8 +240,17 @@ async def get_portfolio(current_user: dict = Depends(get_current_user)):
         key = (sym, atype)
         if key not in agg:
             agg[key] = {"qty": 0.0, "cost": 0.0}
-        agg[key]["qty"] += r.get("shares") or 0.0
-        agg[key]["cost"] += r.get("amount_invested") or 0.0
+        raw_shares = float(r.get("shares") or 0)
+        cost_row = float(r.get("amount_invested") or 0)
+        price_at_purchase = float(r.get("price_at_purchase") or 0)
+        if raw_shares > 0:
+            qty_add = raw_shares
+        elif cost_row > 0 and price_at_purchase > 0:
+            qty_add = cost_row / price_at_purchase
+        else:
+            qty_add = 0.0
+        agg[key]["qty"] += qty_add
+        agg[key]["cost"] += cost_row
 
     if not agg:
         return PortfolioResponse(
@@ -265,10 +275,12 @@ async def get_portfolio(current_user: dict = Depends(get_current_user)):
 
     for (sym, atype), data in agg.items():
         price = prices.get(sym, 0.0)
-        mv = data["qty"] * price
         cost = data["cost"]
-        total_cost += cost
         avg = cost / data["qty"] if data["qty"] else 0.0
+        if price <= 0 and avg > 0:
+            price = avg  # fallback so new holdings show cost when live price missing
+        mv = data["qty"] * price
+        total_cost += cost
         pl = mv - cost
         plpc = pl / cost if cost else 0.0
 
