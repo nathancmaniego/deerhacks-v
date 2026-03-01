@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -81,6 +82,12 @@ export default function PortfolioScreen() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) fetchData();
+    }, [fetchData, loading])
+  );
 
   const loadSupportedAssetsIfNeeded = useCallback(async () => {
     if (supportedAssets !== null) return;

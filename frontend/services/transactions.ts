@@ -43,6 +43,40 @@ export async function processTransactions(): Promise<{
   return response.data;
 }
 
+export interface DemoOption {
+  merchant: string;
+  amount: number;
+  category: 'essential' | 'discretionary';
+}
+
+export async function getDemoOptions(count: number = 8): Promise<{ options: DemoOption[] }> {
+  const response = await api.get('/transactions/demo-options', { params: { count } });
+  return response.data;
+}
+
+export async function addTransaction(params: {
+  merchant?: string;
+  amount?: number;
+  category?: 'essential' | 'discretionary';
+  process?: boolean;
+  demo?: boolean;
+}): Promise<{
+  transaction: Transaction;
+  processed: boolean;
+  savings_added?: number;
+  auto_invested?: boolean;
+  auto_invest_asset?: string;
+}> {
+  const response = await api.post('/transactions/add', {
+    merchant: params.merchant,
+    amount: params.amount,
+    category: params.category,
+    process: params.process !== false,
+    demo: params.demo === true,
+  });
+  return response.data;
+}
+
 export async function getSavingsSummary(): Promise<SavingsSummary> {
   const response = await api.get('/transactions/savings');
   return response.data;

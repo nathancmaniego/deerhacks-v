@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import RiskSlider from '@/components/RiskSlider';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
 import { updateRiskProfile } from '@/services/auth';
+import { addTransaction, getDemoOptions, type DemoOption } from '@/services/transactions';
 
 type RiskLevel = 'chill' | 'moderate' | 'aggressive';
 
@@ -27,6 +28,25 @@ export default function SettingsScreen() {
     (user?.risk_profile as RiskLevel) ?? 'moderate'
   );
   const [savingRisk, setSavingRisk] = useState(false);
+  const [addingTxn, setAddingTxn] = useState(false);
+  const [demoOptions, setDemoOptions] = useState<DemoOption[]>([]);
+  const [loadingDemoOptions, setLoadingDemoOptions] = useState(false);
+
+  const loadDemoOptions = useCallback(async () => {
+    setLoadingDemoOptions(true);
+    try {
+      const { options } = await getDemoOptions(8);
+      setDemoOptions(options);
+    } catch {
+      setDemoOptions([]);
+    } finally {
+      setLoadingDemoOptions(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDemoOptions();
+  }, [loadDemoOptions]);
 
   const handleRiskChange = async (value: RiskLevel) => {
     setRiskProfile(value);
@@ -91,6 +111,89 @@ export default function SettingsScreen() {
           Set how aggressively the AI saves from each purchase.
         </Text>
         <RiskSlider value={riskProfile} onChange={handleRiskChange} disabled={savingRisk} />
+      </View>
+
+      {/* Demo: Add transaction */}
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>Demo</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionDesc, { color: colors.secondaryText }]}>
+          Add a fake transaction to trigger savings + AI auto-invest. Pick one or add a random (discretionary vs essential).
+        </Text>
+        <TouchableOpacity
+          style={[styles.demoButton, { backgroundColor: colors.accent }]}
+          onPress={async () => {
+            setAddingTxn(true);
+            try {
+              const res = await addTransaction({ demo: true, process: true });
+              await refreshUser();
+              const amt = res.transaction?.amount ?? 0;
+              const msg = res.auto_invested
+                ? `Added $${amt.toFixed(2)} → saved, auto-invested in ${res.auto_invest_asset ?? '?'}`
+                : `Added $${amt.toFixed(2)} → saved $${res.savings_added?.toFixed(2) ?? '0'} to pool`;
+              Alert.alert('Done', msg);
+              loadDemoOptions();
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.detail ?? 'Failed to add transaction');
+            } finally {
+              setAddingTxn(false);
+            }
+          }}
+          disabled={addingTxn}>
+          {addingTxn ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.demoButtonText}>Add random transaction</Text>
+          )}
+        </TouchableOpacity>
+        {loadingDemoOptions ? (
+          <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 8 }} />
+        ) : demoOptions.length > 0 ? (
+          <>
+            <Text style={[styles.demoOptionsLabel, { color: colors.secondaryText }]}>
+              Or pick one:
+            </Text>
+            <View style={styles.demoOptionsGrid}>
+              {demoOptions.map((opt, i) => (
+                <TouchableOpacity
+                  key={`${opt.merchant}-${opt.amount}-${i}`}
+                  style={[
+                    styles.demoOptionChip,
+                    { backgroundColor: colors.background, borderColor: colors.border },
+                    opt.category === 'essential' && styles.demoOptionChipEssential,
+                  ]}
+                  onPress={async () => {
+                    setAddingTxn(true);
+                    try {
+                      const res = await addTransaction({
+                        merchant: opt.merchant,
+                        amount: opt.amount,
+                        category: opt.category,
+                        process: true,
+                      });
+                      await refreshUser();
+                      const msg = res.auto_invested
+                        ? `Added ${opt.merchant} $${opt.amount.toFixed(2)} → auto-invested in ${res.auto_invest_asset ?? '?'}`
+                        : `Added ${opt.merchant} $${opt.amount.toFixed(2)} → saved $${res.savings_added?.toFixed(2) ?? '0'} to pool`;
+                      Alert.alert('Done', msg);
+                      loadDemoOptions();
+                    } catch (e: any) {
+                      Alert.alert('Error', e.response?.data?.detail ?? 'Failed to add transaction');
+                    } finally {
+                      setAddingTxn(false);
+                    }
+                  }}
+                  disabled={addingTxn}>
+                  <Text style={[styles.demoOptionMerchant, { color: colors.text }]} numberOfLines={1}>
+                    {opt.merchant}
+                  </Text>
+                  <Text style={[styles.demoOptionAmount, { color: colors.secondaryText }]}>
+                    ${opt.amount.toFixed(2)} · {opt.category === 'essential' ? 'essential' : 'discretionary'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        ) : null}
       </View>
 
       {/* Account Details */}
@@ -186,5 +289,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logoutText: { fontSize: 15, fontWeight: '600' },
+  demoButton: { borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center' },
+  demoButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  demoOptionsLabel: { fontSize: 13, marginTop: 12, marginBottom: 8 },
+  demoOptionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  demoOptionChip: {
+    width: '48%',
+    minWidth: 140,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+  },
+  demoOptionChipEssential: { borderLeftWidth: 3, borderLeftColor: '#22c55e' },
+  demoOptionMerchant: { fontSize: 14, fontWeight: '600' },
+  demoOptionAmount: { fontSize: 12, marginTop: 4 },
   version: { textAlign: 'center', fontSize: 12, marginBottom: 20 },
 });
