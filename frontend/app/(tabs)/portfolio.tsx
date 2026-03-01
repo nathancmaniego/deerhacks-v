@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Modal,
+  FlatList,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/AuthContext';
@@ -19,8 +22,13 @@ import {
   getPortfolio,
   getInvestmentHistory,
   executeInvestment,
+  getSupportedAssets,
+  searchStocks,
+  sellHolding,
   PortfolioResponse,
   Investment,
+  SupportedAssets,
+  StockSearchResult,
 } from '@/services/investments';
 
 export default function PortfolioScreen() {
@@ -30,11 +38,26 @@ export default function PortfolioScreen() {
 
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [investments, setInvestments] = useState<Investment[]>([]);
+  const [supportedAssets, setSupportedAssets] = useState<SupportedAssets | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [investing, setInvesting] = useState(false);
+  const [investModalVisible, setInvestModalVisible] = useState(false);
+  const [investType, setInvestType] = useState<'crypto' | 'stock'>('stock');
+  const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [stockSearchResults, setStockSearchResults] = useState<StockSearchResult[]>([]);
+  const [stockSearching, setStockSearching] = useState(false);
+  const [sellingSymbol, setSellingSymbol] = useState<string | null>(null);
+  const [investAmountTarget, setInvestAmountTarget] = useState<{ asset: string } | null>(null);
+  const [investAmountInput, setInvestAmountInput] = useState('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshUserRef = useRef(refreshUser);
+  const fetchInFlightRef = useRef(false);
+  refreshUserRef.current = refreshUser;
 
   const fetchData = useCallback(async () => {
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
       const [portfolioData, historyData] = await Promise.all([
         getPortfolio().catch(() => null),
@@ -42,11 +65,12 @@ export default function PortfolioScreen() {
       ]);
       setPortfolio(portfolioData);
       setInvestments(historyData.investments);
-      await refreshUser();
+      await refreshUserRef.current();
     } catch (error) {
       console.log('Portfolio fetch error:', error);
     } finally {
       setLoading(false);
+      fetchInFlightRef.current = false;
     }
   }, []);
 
@@ -54,43 +78,110 @@ export default function PortfolioScreen() {
     fetchData();
   }, [fetchData]);
 
+  const loadSupportedAssetsIfNeeded = useCallback(async () => {
+    if (supportedAssets !== null) return;
+    try {
+      const supported = await getSupportedAssets();
+      setSupportedAssets(supported);
+    } catch {
+      setSupportedAssets({ crypto: [], stocks: [] });
+    }
+  }, [supportedAssets]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
   }, [fetchData]);
 
-  const handleBuyCrypto = async () => {
+  useEffect(() => {
+    if (investType !== 'stock' || !investModalVisible) return;
+    const q = stockSearchQuery.trim();
+    if (!q) {
+      setStockSearchResults([]);
+      return;
+    }
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(async () => {
+      setStockSearching(true);
+      try {
+        const results = await searchStocks(q, 12);
+        setStockSearchResults(results);
+      } catch {
+        setStockSearchResults([]);
+      } finally {
+        setStockSearching(false);
+      }
+    }, 350);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [stockSearchQuery, investType, investModalVisible]);
+
+  const openInvestAmount = (asset: string) => {
     const pool = user?.savings_pool ?? 0;
     if (pool < 1) {
       Alert.alert('Insufficient Funds', 'You need at least $1.00 in your savings pool.');
       return;
     }
+    setInvestAmountTarget({ asset });
+    setInvestAmountInput('');
+  };
 
-    const doInvest = async () => {
-      setInvesting(true);
-      try {
-        await executeInvestment();
-        Alert.alert('Success', 'Crypto purchase complete!');
-        await fetchData();
-      } catch (error: any) {
-        Alert.alert('Error', error.response?.data?.detail || 'Failed to buy crypto.');
-      } finally {
-        setInvesting(false);
-      }
-    };
+  const pool = user?.savings_pool ?? 0;
+  const isAmountEmpty = investAmountInput.trim() === '';
+  const investAmountParsed = isAmountEmpty ? null : parseFloat(investAmountInput.trim());
+  const hasValidParsed = investAmountParsed != null && !Number.isNaN(investAmountParsed) && investAmountParsed >= 1;
+  const investAmountToUse = hasValidParsed ? investAmountParsed : (isAmountEmpty ? pool : 0);
+  const investAmountValid = investAmountToUse >= 1 && investAmountToUse <= pool;
 
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Buy crypto with $${pool.toFixed(2)} from your savings pool?`)) {
-        await doInvest();
-      }
-    } else {
-      Alert.alert('Buy Crypto', `Invest $${pool.toFixed(2)} from your savings pool into crypto?`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Buy', onPress: doInvest },
-      ]);
+  const handleConfirmInvest = async () => {
+    if (!investAmountTarget) return;
+    const asset = investAmountTarget.asset;
+    if (!investAmountValid) {
+      Alert.alert('Invalid Amount', `Enter between $1.00 and $${pool.toFixed(2)} (your available balance).`);
+      return;
+    }
+    setInvesting(true);
+    try {
+      await executeInvestment(investAmountToUse, asset, investType);
+      Alert.alert('Done', `Invested $${investAmountToUse.toFixed(2)} in ${asset}.`);
+      setInvestAmountTarget(null);
+      setInvestModalVisible(false);
+      await fetchData();
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.detail || 'Investment failed.');
+    } finally {
+      setInvesting(false);
     }
   };
+
+  const handleSell = (holding: { symbol: string; asset_type?: string }) => {
+    const assetType = (holding.asset_type === 'stock' ? 'stock' : 'crypto') as 'crypto' | 'stock';
+    const msg = `Sell all ${holding.symbol}? Proceeds go to your savings pool.`;
+    const doSell = async () => {
+      setSellingSymbol(holding.symbol);
+      try {
+        const res = await sellHolding(holding.symbol, assetType);
+        Alert.alert('Sold', `$${res.proceeds.toFixed(2)} added to savings pool.`);
+        await fetchData();
+      } catch (err: any) {
+        Alert.alert('Error', err.response?.data?.detail || 'Sell failed.');
+      } finally {
+        setSellingSymbol(null);
+      }
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.confirm(msg)) doSell();
+    } else {
+      Alert.alert('Sell', msg, [{ text: 'Cancel', style: 'cancel' }, { text: 'Sell', onPress: doSell }]);
+    }
+  };
+
+  const assetList = investType === 'crypto'
+    ? (supportedAssets?.crypto ?? [])
+    : (supportedAssets?.stocks ?? []);
+  const assetsLoading = investModalVisible && supportedAssets === null;
 
   if (loading) {
     return (
@@ -101,7 +192,9 @@ export default function PortfolioScreen() {
   }
 
   const totalGainLoss = portfolio?.total_gain_loss ?? 0;
+  const totalGainLossPct = portfolio?.total_gain_loss_pct ?? 0;
   const isPositive = totalGainLoss >= 0;
+  const hasInvestments = (portfolio?.total_cost ?? 0) > 0;
 
   return (
     <ScrollView
@@ -110,17 +203,22 @@ export default function PortfolioScreen() {
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
       }>
-      {/* Value Header */}
+      {/* Balance: total + % change on investments */}
       <View style={styles.valueHeader}>
         <Text style={[styles.valueLabel, { color: colors.secondaryText }]}>
-          Portfolio Value
+          Total Balance
         </Text>
         <Text style={[styles.valueAmount, { color: colors.text }]}>
-          ${(portfolio?.total_value ?? 0).toFixed(2)}
+          ${((portfolio?.total_value ?? 0) + (user?.savings_pool ?? 0)).toFixed(2)}
         </Text>
-        <Text style={[styles.valueChange, { color: isPositive ? colors.savingsGreen : colors.danger }]}>
-          {isPositive ? '+' : ''}${totalGainLoss.toFixed(2)} all time
+        <Text style={[styles.valueSub, { color: colors.secondaryText }]}>
+          Portfolio ${(portfolio?.total_value ?? 0).toFixed(2)} + Cash ${(user?.savings_pool ?? 0).toFixed(2)}
         </Text>
+        {hasInvestments && (
+          <Text style={[styles.valueChange, { color: isPositive ? colors.savingsGreen : colors.danger }]}>
+            {isPositive ? '+' : ''}{totalGainLossPct.toFixed(2)}% ({isPositive ? '+' : ''}${totalGainLoss.toFixed(2)})
+          </Text>
+        )}
       </View>
 
       {/* Pool + Invest */}
@@ -135,16 +233,183 @@ export default function PortfolioScreen() {
         </View>
         <TouchableOpacity
           style={[styles.investButton, { backgroundColor: colors.accent }]}
-          onPress={handleBuyCrypto}
+          onPress={() => {
+            setInvestModalVisible(true);
+            loadSupportedAssetsIfNeeded();
+          }}
           activeOpacity={0.85}
           disabled={investing}>
           {investing ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.investButtonText}>Buy Crypto</Text>
+            <Text style={styles.investButtonText}>Invest</Text>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Invest modal: pick type + asset, then enter amount */}
+      <Modal
+        visible={investModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setInvestAmountTarget(null);
+          setInvestModalVisible(false);
+        }}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              setInvestAmountTarget(null);
+              setInvestModalVisible(false);
+            }}
+          />
+          <View style={[styles.modalContent, { backgroundColor: colors.background }]} pointerEvents="box-none">
+            <View style={styles.modalHeader}>
+              {investAmountTarget ? (
+                <TouchableOpacity onPress={() => setInvestAmountTarget(null)} style={styles.modalBackBtn}>
+                  <Ionicons name="arrow-back" size={22} color={colors.accent} />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.modalBackBtn} />
+              )}
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {investAmountTarget ? `Invest in ${investAmountTarget.asset}` : 'Invest (simulated)'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setInvestAmountTarget(null);
+                  setInvestModalVisible(false);
+                }}
+                hitSlop={12}>
+                <Ionicons name="close" size={24} color={colors.secondaryText} />
+              </TouchableOpacity>
+            </View>
+
+            {investAmountTarget ? (
+              <View style={styles.amountSection}>
+                <Text style={[styles.amountLabel, { color: colors.secondaryText }]}>
+                  Amount to invest (USD)
+                </Text>
+                <Text style={[styles.amountAvailable, { color: colors.text }]}>
+                  Available: ${pool.toFixed(2)}
+                </Text>
+                <TextInput
+                  style={[styles.amountInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                  placeholder="e.g. 50"
+                  placeholderTextColor={colors.secondaryText}
+                  value={investAmountInput}
+                  onChangeText={setInvestAmountInput}
+                  keyboardType="decimal-pad"
+                />
+                <TouchableOpacity
+                  style={[styles.maxButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setInvestAmountInput(pool.toFixed(2))}>
+                  <Text style={[styles.maxButtonText, { color: colors.accent }]}>Use max</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmInvestButton, { backgroundColor: investAmountValid ? colors.accent : colors.border }]}
+                  onPress={handleConfirmInvest}
+                  disabled={!investAmountValid || investing}>
+                  {investing ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.confirmInvestButtonText}>
+                      Invest ${investAmountToUse.toFixed(2)}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={[styles.typeToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <TouchableOpacity
+                    style={[styles.typeTab, investType === 'stock' && { backgroundColor: colors.accent }]}
+                    onPress={() => setInvestType('stock')}>
+                    <Text style={[styles.typeTabText, { color: investType === 'stock' ? '#fff' : colors.text }]}>
+                      Stocks
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.typeTab, investType === 'crypto' && { backgroundColor: colors.accent }]}
+                    onPress={() => setInvestType('crypto')}>
+                    <Text style={[styles.typeTabText, { color: investType === 'crypto' ? '#fff' : colors.text }]}>
+                      Solana
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {investType === 'stock' ? (
+                  <>
+                    <Text style={[styles.assetListLabel, { color: colors.secondaryText }]}>
+                      Search any stock by name or ticker
+                    </Text>
+                    <TextInput
+                      style={[styles.searchInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+                      placeholder="e.g. Apple, AAPL, Tesla"
+                      placeholderTextColor={colors.secondaryText}
+                      value={stockSearchQuery}
+                      onChangeText={setStockSearchQuery}
+                      autoCapitalize="characters"
+                    />
+                    {stockSearching && (
+                      <View style={styles.searchLoading}>
+                        <ActivityIndicator size="small" color={colors.accent} />
+                      </View>
+                    )}
+                    <FlatList
+                      data={stockSearchResults}
+                      keyExtractor={(item) => item.symbol}
+                      style={styles.assetList}
+                      contentContainerStyle={styles.assetListContent}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[styles.stockRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+                          onPress={() => openInvestAmount(item.symbol)}
+                          disabled={investing}>
+                          <View>
+                            <Text style={[styles.stockSymbol, { color: colors.text }]}>{item.symbol}</Text>
+                            <Text style={[styles.stockName, { color: colors.secondaryText }]} numberOfLines={1}>{item.name}</Text>
+                          </View>
+                          <Text style={[styles.stockPrice, { color: colors.text }]}>${item.price.toFixed(2)}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.assetListLabel, { color: colors.secondaryText }]}>
+                      Solana meme coins — tap one, then enter amount
+                    </Text>
+                    {assetsLoading && (
+                      <View style={styles.searchLoading}>
+                        <ActivityIndicator size="small" color={colors.accent} />
+                      </View>
+                    )}
+                    <FlatList
+                      data={assetList}
+                      keyExtractor={(item) => item}
+                      numColumns={2}
+                      columnWrapperStyle={styles.assetRow}
+                      style={styles.assetList}
+                      contentContainerStyle={styles.assetListContent}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[styles.assetChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+                          onPress={() => openInvestAmount(item)}
+                          disabled={investing}>
+                          <Text style={[styles.assetChipText, { color: colors.text }]}>{item}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Holdings */}
       <Text style={[styles.sectionTitle, { color: colors.text }]}>Holdings</Text>
@@ -154,13 +419,20 @@ export default function PortfolioScreen() {
           <View style={[styles.emptyIconContainer, { backgroundColor: colors.accentLight }]}>
             <Ionicons name="trending-up-outline" size={24} color={colors.accent} />
           </View>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No crypto holdings yet</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No holdings yet</Text>
           <Text style={[styles.emptyDesc, { color: colors.secondaryText }]}>
-            Buy BTC, ETH, or SOL to get started. Your holdings will appear here.
+            Search stocks by name or ticker, or pick Solana meme coins. Sell any holding to add proceeds to your balance.
           </Text>
         </View>
       ) : (
-        portfolio.holdings.map((h) => <PortfolioCard key={h.symbol} holding={h} />)
+        portfolio.holdings.map((h) => (
+          <PortfolioCard
+            key={`${h.symbol}-${h.asset_type ?? 'crypto'}`}
+            holding={h}
+            onSell={() => handleSell(h)}
+            selling={sellingSymbol === h.symbol}
+          />
+        ))
       )}
 
       {/* History */}
@@ -220,7 +492,56 @@ const styles = StyleSheet.create({
   },
   valueLabel: { fontSize: 14, fontWeight: '500' },
   valueAmount: { fontSize: 44, fontWeight: '700', letterSpacing: -1.5, marginVertical: 4 },
+  valueSub: { fontSize: 12, marginBottom: 4 },
   valueChange: { fontSize: 15, fontWeight: '600' },
+  searchInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  amountSection: { marginTop: 8 },
+  amountLabel: { fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  amountAvailable: { fontSize: 13, marginBottom: 12 },
+  amountInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 18,
+    marginBottom: 10,
+  },
+  maxButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  maxButtonText: { fontSize: 14, fontWeight: '600' },
+  confirmInvestButton: {
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  confirmInvestButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  searchLoading: { paddingVertical: 8, alignItems: 'center' },
+  stockRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  stockSymbol: { fontSize: 15, fontWeight: '700' },
+  stockName: { fontSize: 12, marginTop: 2, maxWidth: 180 },
+  stockPrice: { fontSize: 15, fontWeight: '600' },
   poolCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -255,4 +576,52 @@ const styles = StyleSheet.create({
   historyAmount: { fontSize: 15, fontWeight: '600' },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   statusText: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
+    paddingHorizontal: 20,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalBackBtn: { padding: 4, marginRight: 4 },
+  modalTitle: { fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center' },
+  typeToggle: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 12,
+  },
+  typeTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  typeTabText: { fontSize: 14, fontWeight: '600' },
+  assetListLabel: { fontSize: 12, marginBottom: 10 },
+  assetList: { maxHeight: 260 },
+  assetListContent: { paddingBottom: 16 },
+  assetRow: { justifyContent: 'space-between', marginBottom: 8 },
+  assetChip: {
+    width: '48%',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  assetChipText: { fontSize: 15, fontWeight: '600' },
 });

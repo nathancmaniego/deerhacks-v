@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { getItem, setItem, deleteItem } from '@/services/storage';
 import { User, getMe, loginUser, registerUser } from '@/services/auth';
 
@@ -62,14 +62,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
       const userData = await getMe();
       setUser(userData);
     } catch (error) {
       // silent fail
     }
-  };
+  }, []);
 
   return (
     <AuthContext.Provider

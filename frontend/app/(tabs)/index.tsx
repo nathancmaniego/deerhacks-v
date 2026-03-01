@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -29,6 +30,7 @@ export default function DashboardScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [savings, setSavings] = useState<SavingsSummary | null>(null);
   const [portfolioValue, setPortfolioValue] = useState<number>(0);
+  const [portfolioGainLossPct, setPortfolioGainLossPct] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -43,8 +45,10 @@ export default function DashboardScreen() {
       try {
         const portfolio = await getPortfolio();
         setPortfolioValue(portfolio.total_value);
+        setPortfolioGainLossPct(portfolio.total_cost && portfolio.total_cost > 0 ? (portfolio.total_gain_loss_pct ?? null) : null);
       } catch {
         setPortfolioValue(0);
+        setPortfolioGainLossPct(null);
       }
       await refreshUser();
     } catch (error) {
@@ -57,6 +61,12 @@ export default function DashboardScreen() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) fetchData();
+    }, [fetchData, loading])
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -92,6 +102,15 @@ export default function DashboardScreen() {
         <Text style={[styles.netWorthLabel, { color: colors.secondaryText }]}>
           Total Balance
         </Text>
+        {portfolioGainLossPct != null && (
+          <Text
+            style={[
+              styles.portfolioPct,
+              { color: portfolioGainLossPct >= 0 ? colors.savingsGreen : colors.danger },
+            ]}>
+            {portfolioGainLossPct >= 0 ? '+' : ''}{portfolioGainLossPct.toFixed(2)}% on investments
+          </Text>
+        )}
       </View>
 
       {/* Stats Row */}
@@ -103,7 +122,7 @@ export default function DashboardScreen() {
           </Text>
         </View>
         <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Crypto</Text>
+          <Text style={[styles.statLabel, { color: colors.secondaryText }]}>Portfolio</Text>
           <Text style={[styles.statValue, { color: colors.accent }]}>
             ${portfolioValue.toFixed(2)}
           </Text>
@@ -175,6 +194,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginTop: 4,
+  },
+  portfolioPct: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 6,
   },
   statsRow: {
     flexDirection: 'row',

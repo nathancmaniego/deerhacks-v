@@ -12,11 +12,9 @@ from app.models.investment import (
     PortfolioResponse,
     PortfolioHolding,
 )
-from app.services.crypto_service import (
-    simulate_buy,
-    get_crypto_prices,
-    SUPPORTED_SYMBOLS,
-)
+from app.services.price_service import get_supported_assets, get_prices_by_type, get_price, ASSET_TYPE_CRYPTO, ASSET_TYPE_STOCK
+from app.services.investment_execution import execute_simulated_buy
+from app.services.stock_service import search_stocks
 from app.config import get_settings
 from app.utils.security import get_current_user
 
@@ -27,12 +25,27 @@ router = APIRouter()
 class ExecuteInvestmentRequest(BaseModel):
     amount: Optional[float] = None
     asset: Optional[str] = None
+    asset_type: Optional[str] = None  # "crypto" | "stock"; inferred from asset if omitted
+
+
+class SellRequest(BaseModel):
+    asset: str
+    asset_type: str  # "crypto" | "stock"
 
 
 @router.get("/supported")
 async def supported_assets():
-    """Return the list of supported crypto symbols."""
-    return {"assets": SUPPORTED_SYMBOLS}
+    """Return Solana crypto (meme coins) and suggested stocks. Stocks: use /stocks/search for any ticker."""
+    return get_supported_assets()
+
+
+@router.get("/stocks/search")
+async def stocks_search(q: str = "", limit: int = 15):
+    """Search stocks by symbol or company name. Returns list of { symbol, name, price }."""
+    if not (q or "").strip():
+        return {"results": []}
+    results = await search_stocks(q.strip(), limit=max(1, min(limit, 25)))
+    return {"results": results}
 
 
 @router.post("/execute", response_model=InvestmentResponse)
@@ -40,7 +53,7 @@ async def execute_investment(
     data: ExecuteInvestmentRequest | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """Buy crypto using savings pool funds."""
+    """Simulate a buy using savings pool; uses real APIs for prices."""
     user_id = current_user["id"]
     savings_pool = current_user.get("savings_pool", 0.0) or 0.0
 
@@ -56,23 +69,38 @@ async def execute_investment(
             detail=f"Minimum investment is $1.00. Current pool: ${savings_pool:.2f}",
         )
 
+    assets = get_supported_assets()
     asset = (
         (data.asset.upper() if data and data.asset else None)
         or current_user.get("preferred_asset")
         or settings.DEFAULT_ASSET
     )
-    if asset not in SUPPORTED_SYMBOLS:
+    asset_type = (data.asset_type or "").lower() or None
+    if asset_type and asset_type not in (ASSET_TYPE_CRYPTO, ASSET_TYPE_STOCK):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported asset: {asset}. Supported: {SUPPORTED_SYMBOLS}",
+            detail="asset_type must be 'crypto' or 'stock'.",
+        )
+    if not asset_type:
+        if asset in assets["crypto"]:
+            asset_type = ASSET_TYPE_CRYPTO
+        else:
+            asset_type = ASSET_TYPE_STOCK
+    if asset_type == ASSET_TYPE_CRYPTO and asset not in assets["crypto"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported crypto: {asset}. Solana options: {assets['crypto']}.",
         )
 
     try:
-        result = await simulate_buy(asset, invest_amount)
+        result = await execute_simulated_buy(asset, invest_amount, asset_type)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
+        msg = str(e) if str(e) else "Price unavailable. Try again in a moment."
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Price fetch failed: {e}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Price fetch failed: {msg}",
         )
 
     now = datetime.now(timezone.utc).isoformat()
@@ -84,6 +112,7 @@ async def execute_investment(
         "shares": result["shares"],
         "price_at_purchase": result["price"],
         "status": result["status"],
+        "asset_type": result["asset_type"],
         "created_at": now,
     }
 
@@ -95,50 +124,120 @@ async def execute_investment(
     return InvestmentResponse(**row)
 
 
-@router.get("/portfolio", response_model=PortfolioResponse)
-async def get_portfolio(current_user: dict = Depends(get_current_user)):
-    """Aggregate holdings and attach live prices."""
+@router.post("/sell")
+async def sell_holding(
+    data: SellRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Sell entire position for an asset. Proceeds go back to savings pool; balance updates automatically."""
     user_id = current_user["id"]
+    savings_pool = float(current_user.get("savings_pool") or 0.0)
+    asset = (data.asset or "").strip().upper()
+    asset_type = (data.asset_type or "").lower()
+    if asset_type not in (ASSET_TYPE_CRYPTO, ASSET_TYPE_STOCK):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset_type must be 'crypto' or 'stock'.")
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset is required.")
 
     rows = (
+        supabase.table("investments")
+        .select("id, shares, amount_invested")
+        .eq("user_id", user_id)
+        .eq("asset", asset)
+        .eq("status", "filled")
+        .execute()
+    ).data or []
+
+    if not rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No position found for {asset}.",
+        )
+
+    total_shares = sum(float(r.get("shares") or 0) for r in rows)
+    total_cost = sum(float(r.get("amount_invested") or 0) for r in rows)
+    if total_shares <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Position has no shares.")
+
+    try:
+        price = await get_price(asset, asset_type)
+    except Exception:
+        price = total_cost / total_shares
+
+    proceeds = total_shares * price
+    new_pool = savings_pool + proceeds
+
+    for r in rows:
+        supabase.table("investments").delete().eq("id", r["id"]).execute()
+
+    supabase.table("users").update({"savings_pool": new_pool}).eq("id", user_id).execute()
+
+    return {
+        "asset": asset,
+        "asset_type": asset_type,
+        "shares_sold": total_shares,
+        "price": price,
+        "proceeds": proceeds,
+        "savings_pool": new_pool,
+    }
+
+
+@router.get("/portfolio", response_model=PortfolioResponse)
+async def get_portfolio(current_user: dict = Depends(get_current_user)):
+    """Aggregate holdings and attach live prices (crypto + stocks)."""
+    user_id = current_user["id"]
+
+    result = (
         supabase.table("investments")
         .select("*")
         .eq("user_id", user_id)
         .eq("status", "filled")
         .execute()
-    ).data
+    )
+    rows = result.data or []
 
-    agg: dict[str, dict] = {}
+    # Aggregate by (asset, asset_type); default asset_type to crypto for legacy rows
+    agg: dict[tuple[str, str], dict] = {}
     for r in rows:
         sym = r["asset"]
-        if sym not in agg:
-            agg[sym] = {"qty": 0.0, "cost": 0.0}
-        agg[sym]["qty"] += r["shares"]
-        agg[sym]["cost"] += r["amount_invested"]
+        atype = (r.get("asset_type") or "crypto").lower()
+        if atype not in (ASSET_TYPE_CRYPTO, ASSET_TYPE_STOCK):
+            atype = ASSET_TYPE_CRYPTO
+        key = (sym, atype)
+        if key not in agg:
+            agg[key] = {"qty": 0.0, "cost": 0.0}
+        agg[key]["qty"] += r.get("shares") or 0.0
+        agg[key]["cost"] += r.get("amount_invested") or 0.0
 
     if not agg:
         return PortfolioResponse(
             holdings=[],
             total_value=0.0,
             total_gain_loss=0.0,
+            total_cost=0.0,
+            total_gain_loss_pct=0.0,
             savings_pool=current_user.get("savings_pool", 0.0) or 0.0,
         )
 
+    assets_with_type = [list(k) for k in agg.keys()]
     try:
-        prices = await get_crypto_prices(list(agg.keys()))
+        prices = await get_prices_by_type(assets_with_type)
     except Exception:
         prices = {}
 
     holdings: list[PortfolioHolding] = []
     total_value = 0.0
     total_gl = 0.0
+    total_cost = 0.0
 
-    for sym, data in agg.items():
+    for (sym, atype), data in agg.items():
         price = prices.get(sym, 0.0)
         mv = data["qty"] * price
-        avg = data["cost"] / data["qty"] if data["qty"] else 0.0
-        pl = mv - data["cost"]
-        plpc = pl / data["cost"] if data["cost"] else 0.0
+        cost = data["cost"]
+        total_cost += cost
+        avg = cost / data["qty"] if data["qty"] else 0.0
+        pl = mv - cost
+        plpc = pl / cost if cost else 0.0
 
         holdings.append(
             PortfolioHolding(
@@ -149,15 +248,20 @@ async def get_portfolio(current_user: dict = Depends(get_current_user)):
                 current_price=price,
                 unrealized_pl=pl,
                 unrealized_plpc=plpc,
+                asset_type=atype,
             )
         )
         total_value += mv
         total_gl += pl
 
+    total_gain_loss_pct = (total_gl / total_cost * 100.0) if total_cost else 0.0
+
     return PortfolioResponse(
         holdings=holdings,
         total_value=total_value,
         total_gain_loss=total_gl,
+        total_cost=total_cost,
+        total_gain_loss_pct=total_gain_loss_pct,
         savings_pool=current_user.get("savings_pool", 0.0) or 0.0,
     )
 
@@ -180,8 +284,12 @@ async def get_investment_history(
         .execute()
     )
 
-    investments = [InvestmentResponse(**r) for r in result.data]
-    total_invested = sum(r["amount_invested"] for r in result.data)
+    investments = []
+    for r in result.data or []:
+        if "asset_type" not in r:
+            r["asset_type"] = "crypto"
+        investments.append(InvestmentResponse(**r))
+    total_invested = sum(r.get("amount_invested", 0) for r in result.data or [])
 
     return InvestmentHistoryResponse(
         investments=investments,

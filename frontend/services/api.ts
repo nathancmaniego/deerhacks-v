@@ -4,9 +4,13 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // API base URL: from .env (EXPO_PUBLIC_API_URL) via app.config.js → extra.apiUrl,
-// or fallback: Android emulator → 10.0.2.2:8000, else → localhost:8000
-// On Expo Go on a physical device, localhost is the phone — set EXPO_PUBLIC_API_URL to your computer's IP (e.g. http://192.168.1.5:8000)
+// or fallback by platform: web → localhost, Android emulator → 10.0.2.2, else → localhost
+// On Expo Go on a physical device, set EXPO_PUBLIC_API_URL to your computer's IP (e.g. http://192.168.1.5:8000)
 const getBaseUrl = () => {
+  // Web browser runs on the same machine as the dev server → use localhost so it works in the browser
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
   const envUrl = Constants.expoConfig?.extra?.apiUrl;
   if (envUrl) return envUrl;
 

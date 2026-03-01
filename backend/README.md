@@ -88,3 +88,15 @@ curl http://localhost:8000/health
 - `PUT /auth/risk-profile` — Update risk profile  
 
 Plaid, transactions, investments, and AI routes can be re-enabled later when you add those features.
+
+### Investments (Supabase)
+
+Simulated investing uses **real prices**: crypto via CoinGecko (BTC, ETH, SOL, BONK, JUP) and stocks via yfinance (SPY, AAPL, etc.). No real orders; balance comes from the app savings pool.
+
+- Add an optional column for asset type (crypto vs stock):
+
+```sql
+ALTER TABLE investments ADD COLUMN IF NOT EXISTS asset_type TEXT DEFAULT 'crypto';
+```
+
+- Install deps: `pip install -r requirements.txt` (includes `yfinance` for stock prices).

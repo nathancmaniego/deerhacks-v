@@ -9,9 +9,10 @@ _ENV_FILE = _BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
-    # Supabase
+    # Supabase (use service_role key for backend so RLS doesn't block server-side inserts)
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""  # optional; if set, used for DB client (bypasses RLS)
 
     # JWT
     JWT_SECRET: str = "change-this-secret-key"
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
     # Savings
     SAVINGS_POOL_THRESHOLD: float = 5.0
     DEFAULT_ASSET: str = "BTC"
+
+    # Alpaca (optional – for stock prices; paper keys work)
+    ALPACA_API_KEY: str = ""
+    ALPACA_SECRET_KEY: str = ""
+    ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
 
     model_config = {
         "env_file": _ENV_FILE,
